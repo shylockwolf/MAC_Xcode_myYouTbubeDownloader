@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>需要此权限来执行下载命令</string>
+	<key>NSAppleScriptEnabled</key>
+	<true/>
+	<key>NSSystemAdministrationUsageDescription</key>
+	<string>需要此权限来执行下载命令</string>
+	<key>NSSystemUsageDescription</key>
+	<string>需要此权限来执行下载命令</string>
+	<key>LSUIElement</key>
+	<false/>
+	<key>NSDisablePersistentTerminalLogging</key>
+	<true/>
+</dict>
+</plist>
