@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var urlInputs = ["", "", "", "", ""]
     @State private var commandLogs: [String] = []
     @State private var isProcessing = false
+    @State private var convertToMp3 = false
     @State private var downloadTask: Process?
 
     var body: some View {
@@ -45,6 +46,9 @@ struct ContentView: View {
                 }
                 
                 Section {
+                    Toggle("转换成 mp3", isOn: $convertToMp3)
+                        .padding(.vertical, 4)
+                    
                     HStack(spacing: 12) {
                         Button(action: startDownload) {
                             HStack {
@@ -136,39 +140,64 @@ struct ContentView: View {
     private func startDownload() {
         isProcessing = true
         commandLogs = []
-
-        // 获取下载目录
-        let downloadsPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory() + "/Downloads"
-
-        // yt-dlp 的完整路径
-        let ytDlpPath = "/opt/homebrew/bin/yt-dlp"
-
+        
+        var tasks: [(index: Int, url: String)] = []
         for index in 0..<5 {
             if !urlInputs[index].isEmpty {
                 let url = urlInputs[index]
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .replacingOccurrences(of: "\"", with: "")
                     .replacingOccurrences(of: "'", with: "")
-                let command = "\(ytDlpPath) --cookies-from-browser chrome \"\(url)\""
-
-                commandLogs.append("=== 视频 \(index + 1) ===")
-                commandLogs.append("执行命令: \(command)")
-                commandLogs.append("工作目录: \(downloadsPath)")
-                commandLogs.append("")
-
-                executeCommand(command: command, workingDirectory: downloadsPath) { success in
-                    if success {
-                        DispatchQueue.main.async {
-                            commandLogs.append("✓ 视频 \(index + 1) 下载完成")
-                            commandLogs.append("")
-                        }
-                    } else {
-                        DispatchQueue.main.async {
-                            commandLogs.append("✗ 视频 \(index + 1) 下载失败")
-                            commandLogs.append("")
-                        }
-                    }
+                tasks.append((index, url))
+            }
+        }
+        
+        if tasks.isEmpty {
+            isProcessing = false
+            return
+        }
+        
+        processQueue(tasks)
+    }
+    
+    private func processQueue(_ tasks: [(index: Int, url: String)]) {
+        var pendingTasks = tasks
+        guard !pendingTasks.isEmpty else {
+            isProcessing = false
+            commandLogs.append("=== 所有任务执行完毕 ===")
+            return
+        }
+        
+        let currentTask = pendingTasks.removeFirst()
+        let index = currentTask.index
+        let url = currentTask.url
+        
+        // 获取下载目录
+        let downloadsPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory() + "/Downloads"
+        // yt-dlp 的完整路径
+        let ytDlpPath = "/opt/homebrew/bin/yt-dlp"
+        
+        var command = "\(ytDlpPath) --cookies-from-browser chrome"
+        if convertToMp3 {
+            command += " -x --audio-format mp3"
+        }
+        command += " \"\(url)\""
+        
+        commandLogs.append("=== 开始下载视频 \(index + 1) ===")
+        commandLogs.append("执行命令: \(command)")
+        commandLogs.append("工作目录: \(downloadsPath)")
+        commandLogs.append("")
+        
+        executeCommand(command: command, workingDirectory: downloadsPath) { success in
+            DispatchQueue.main.async {
+                if success {
+                    commandLogs.append("✓ 视频 \(index + 1) 下载完成")
+                } else {
+                    commandLogs.append("✗ 视频 \(index + 1) 下载失败")
                 }
+                commandLogs.append("")
+                // 递归处理下一个任务
+                self.processQueue(pendingTasks)
             }
         }
     }
@@ -209,9 +238,6 @@ struct ContentView: View {
         task.terminationHandler = { process in
             DispatchQueue.main.async {
                 completion(process.terminationStatus == 0)
-                if process.terminationStatus == 0 {
-                    isProcessing = false
-                }
             }
         }
 
@@ -221,7 +247,6 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 commandLogs.append("错误: \(error.localizedDescription)")
                 completion(false)
-                isProcessing = false
             }
         }
     }
