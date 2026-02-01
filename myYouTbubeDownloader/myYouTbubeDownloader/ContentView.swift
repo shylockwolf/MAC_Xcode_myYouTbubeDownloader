@@ -12,7 +12,7 @@ struct ContentView: View {
     @State private var urlInputs = ["", "", "", "", ""]
     @State private var commandLogs: [String] = []
     @State private var isProcessing = false
-    @State private var convertToMp3 = false
+    @State private var convertToMp3 = true
     @State private var downloadTask: Process?
 
     var body: some View {
@@ -91,7 +91,7 @@ struct ContentView: View {
                 
                 Section {
                     VStack(spacing: 2) {
-                        Text("ver 1.1")
+                        Text("Version 1.2")
                         Text("by Shylock Wolf")
                         Text("2026/02")
                     }
@@ -207,7 +207,7 @@ struct ContentView: View {
         
         var command = "\(ytDlpPath) --cookies-from-browser chrome"
         if convertToMp3 {
-            command += " -x --audio-format mp3"
+            command += " -x --audio-format mp3 --embed-thumbnail"
         }
         command += " \"\(url)\""
         
