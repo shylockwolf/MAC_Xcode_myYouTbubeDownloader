@@ -29,8 +29,14 @@ struct ContentView: View {
                             HStack {
                                 Image(systemName: "link")
                                     .foregroundStyle(.gray)
-                                TextField("粘贴 YouTube 网址", text: $urlInputs[index])
-                                    .textFieldStyle(.plain)
+                                ZStack(alignment: .leading) {
+                                    if urlInputs[index].isEmpty {
+                                        Text("粘贴 YouTube 网址")
+                                            .foregroundStyle(.gray.opacity(0.5))
+                                    }
+                                    TextField("", text: $urlInputs[index])
+                                        .textFieldStyle(.plain)
+                                }
                             }
                             .padding(8)
                             .background(Color(NSColor.controlBackgroundColor))
@@ -69,8 +75,30 @@ struct ContentView: View {
                         .controlSize(.large)
                         .disabled(!isProcessing)
                         .help("放弃下载")
+                        
+                        Button(action: {
+                            NSApplication.shared.terminate(nil)
+                        }) {
+                            Image(systemName: "power")
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .help("退出程序")
                     }
                     .padding(.top, 10)
+                }
+                
+                Section {
+                    VStack(spacing: 2) {
+                        Text("ver 1.1")
+                        Text("by Shylock Wolf")
+                        Text("2026/02")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 20)
                 }
             }
             .listStyle(.sidebar)
@@ -196,8 +224,12 @@ struct ContentView: View {
                     commandLogs.append("✗ 视频 \(index + 1) 下载失败")
                 }
                 commandLogs.append("")
-                // 递归处理下一个任务
-                self.processQueue(pendingTasks)
+                // 递归处理下一个任务，如果任务被取消则不再继续
+                if self.isProcessing {
+                    self.processQueue(pendingTasks)
+                } else {
+                     commandLogs.append("--- 剩余任务已放弃 ---")
+                }
             }
         }
     }
@@ -212,7 +244,8 @@ struct ContentView: View {
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         task.environment = env
         
-        task.arguments = ["-c", "cd \"\(workingDirectory)\" && \(command)"]
+        // 使用 exec 确保 terminate() 能直接杀掉子进程
+        task.arguments = ["-c", "cd \"\(workingDirectory)\" && exec \(command)"]
         task.standardOutput = pipe
         task.standardError = pipe
 
