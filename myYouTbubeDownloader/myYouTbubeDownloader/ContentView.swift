@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var isProcessing = false
     @State private var convertToMp3 = true
     @State private var downloadTask: Process?
+    @State private var completedTasks: Set<Int> = []
 
     var body: some View {
         NavigationView {
@@ -22,9 +23,18 @@ struct ContentView: View {
                 Section(header: Text("YouTube 下载任务").font(.headline)) {
                     ForEach(0..<5, id: \.self) { index in
                         VStack(alignment: .leading, spacing: 4) {
-                            Label("视频 \(index + 1)", systemImage: "video.circle")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            HStack {
+                                if completedTasks.contains(index) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                } else {
+                                    Image(systemName: "video.circle")
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text("视频 \(index + 1)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                             
                             HStack {
                                 Image(systemName: "link")
@@ -91,7 +101,7 @@ struct ContentView: View {
                 
                 Section {
                     VStack(spacing: 2) {
-                        Text("Version 1.2")
+                        Text("Version 1.5")
                         Text("by Shylock Wolf")
                         Text("2026/02")
                     }
@@ -168,6 +178,7 @@ struct ContentView: View {
     private func startDownload() {
         isProcessing = true
         commandLogs = []
+        completedTasks.removeAll()
         
         var tasks: [(index: Int, url: String)] = []
         for index in 0..<5 {
@@ -220,6 +231,7 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 if success {
                     commandLogs.append("✓ 视频 \(index + 1) 下载完成")
+                    completedTasks.insert(index)
                 } else {
                     commandLogs.append("✗ 视频 \(index + 1) 下载失败")
                 }
