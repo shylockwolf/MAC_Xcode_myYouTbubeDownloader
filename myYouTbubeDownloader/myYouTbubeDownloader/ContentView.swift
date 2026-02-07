@@ -12,159 +12,242 @@ struct ContentView: View {
     @State private var urlInputs = ["", "", "", "", ""]
     
     // 多通道并发支持
-    @State private var slotLogs: [[String]] = [[], [], []] // 3个通道的日志
-    @State private var activeSlots: [Int?] = [nil, nil, nil] // 记录每个slot正在处理哪个任务index (0-4)
-    @State private var downloadTasks: [Process?] = [nil, nil, nil] // 3个下载进程
+    @State private var slotLogs: [[String]] = [[], [], []]
+    @State private var activeSlots: [Int?] = [nil, nil, nil]
+    @State private var downloadTasks: [Process?] = [nil, nil, nil]
     
     @State private var isProcessing = false
     @State private var convertToMp3 = true
     @State private var completedTasks: Set<Int> = []
     
-    // 待处理任务队列
     @State private var pendingTasks: [(index: Int, url: String)] = []
+    
+    // 动画状态
+    @State private var buttonScale: CGFloat = 1.0
+    @State private var showCompletionAnimation = false
 
     var body: some View {
         HSplitView {
-            // 左侧：侧边栏风格输入区
-            List {
-                Section(header: Text("YouTube 下载任务").font(.headline)) {
-                    ForEach(0..<5, id: \.self) { index in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                if completedTasks.contains(index) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.green)
-                                } else {
-                                    Image(systemName: "video.circle")
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text("视频 \(index + 1)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                
-                                Spacer()
-                                
-                                // 显示该视频当前在哪一个通道运行
-                                if let slotIndex = activeSlots.firstIndex(of: index) {
-                                    Text("正在通道 \(slotIndex + 1) 下载...")
-                                        .font(.caption2)
-                                        .foregroundStyle(.blue)
-                                }
-                            }
-                            
-                            HStack {
-                                Image(systemName: "link")
-                                    .foregroundStyle(.gray)
-                                ZStack(alignment: .leading) {
-                                    if urlInputs[index].isEmpty {
-                                        Text("粘贴 YouTube 网址")
-                                            .foregroundStyle(.gray.opacity(0.5))
-                                    }
-                                    TextField("", text: $urlInputs[index])
-                                        .textFieldStyle(.plain)
-                                }
-                            }
-                            .padding(8)
-                            .background(Color(NSColor.controlBackgroundColor))
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                            )
-                        }
-                        .padding(.vertical, 4)
-                        .listRowSeparator(.hidden)
-                    }
-                }
-                
-                Section {
-                    Toggle("转换成 mp3", isOn: $convertToMp3)
-                        .padding(.vertical, 4)
-                    
-                    HStack(spacing: 12) {
-                        Button(action: startDownload) {
-                            HStack {
-                                Image(systemName: "arrow.down.circle.fill")
-                                Text("开始下载")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(isProcessing || urlInputs.allSatisfy { $0.isEmpty })
-
-                        Button(action: cancelDownload) {
-                            Image(systemName: "xmark.circle")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .disabled(!isProcessing)
-                        .help("放弃下载")
-                        
-                        Button(action: {
-                            NSApplication.shared.terminate(nil)
-                        }) {
-                            Image(systemName: "power")
-                                .foregroundStyle(.red)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .help("退出程序")
-                    }
-                    .padding(.top, 10)
-                }
-                
-                Section {
-                    VStack(spacing: 2) {
-                        Text("Version 1.6")
-                        Text("by Shylock Wolf")
-                        Text("2026/02")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 20)
-                }
-            }
-            .listStyle(.sidebar)
-            .frame(minWidth: 250, maxHeight: .infinity)
-
-            // 右侧：控制台输出 (分为三个通道)
-            GeometryReader { geometry in
-                VStack(spacing: 0) {
-                    // 顶部标题栏
-                    HStack {
-                        Image(systemName: "terminal.fill")
-                            .foregroundStyle(.secondary)
-                        Text("并行下载日志 (最大并发: 3)")
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if isProcessing {
-                            ProgressView()
-                                .controlSize(.small)
-                                .padding(.trailing, 8)
-                        }
-                    }
-                    .padding()
-                    .background(Material.bar)
-                    
-                    Divider()
-
-                    // 三个独立的日志窗口
-                    VStack(spacing: 8) {
-                        LogSlotView(title: "通道 1", logs: slotLogs[0], isActive: activeSlots[0] != nil)
-                        LogSlotView(title: "通道 2", logs: slotLogs[1], isActive: activeSlots[1] != nil)
-                        LogSlotView(title: "通道 3", logs: slotLogs[2], isActive: activeSlots[2] != nil)
-                    }
-                    .padding(4)
-                }
-            }
-            .frame(width: 600)
-            .frame(maxHeight: .infinity) // 宽度修改为 600
+            // 左侧：现代化侧边栏
+            sidebarView
+            
+            // 右侧：现代化日志面板
+            logsPanelView
         }
-        .frame(minWidth: 900, minHeight: 150) // 高度修改为 150
+        .frame(minWidth: 1000, minHeight: 600)
+        .background(.windowBackground)
+    }
+    
+    // MARK: - 侧边栏视图
+    private var sidebarView: some View {
+        VStack(spacing: 0) {
+            // 标题区域
+            sidebarHeader
+            
+            Divider()
+            
+            // 任务列表
+            ScrollView {
+                VStack(spacing: 16) {
+                    ForEach(0..<5, id: \.self) { index in
+                        TaskInputCard(
+                            index: index,
+                            url: $urlInputs[index],
+                            isCompleted: completedTasks.contains(index),
+                            activeSlot: activeSlots.firstIndex(of: index)
+                        )
+                        .transition(.opacity.combined(with: .scale))
+                    }
+                }
+                .padding(20)
+            }
+            
+            Divider()
+            
+            // 控制区域
+            controlSection
+        }
+        .frame(minWidth: 320, maxWidth: 380)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+    
+    // MARK: - 侧边栏标题
+    private var sidebarHeader: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("YouTube 下载器")
+                        .font(.system(size: 16, weight: .semibold))
+                    
+                    Text("支持批量下载与 MP3 转换")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .background(.bar)
+    }
+    
+    // MARK: - 控制区域
+    private var controlSection: some View {
+        VStack(spacing: 16) {
+            // 格式选择
+            HStack {
+                Image(systemName: convertToMp3 ? "music.note" : "film")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
+                
+                Toggle("转换为 MP3 格式", isOn: $convertToMp3)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            
+            // 操作按钮
+            HStack(spacing: 12) {
+                // 取消按钮
+                Button(action: cancelDownload) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .disabled(!isProcessing)
+                .help("取消下载")
+                
+                // 主按钮
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        buttonScale = 0.95
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            buttonScale = 1.0
+                        }
+                    }
+                    startDownload()
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: isProcessing ? "arrow.clockwise" : "arrow.down")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text(isProcessing ? "下载中..." : "开始下载")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 36)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(isProcessing || urlInputs.allSatisfy { $0.isEmpty })
+                .scaleEffect(buttonScale)
+            }
+            .padding(.horizontal, 16)
+            
+            // 状态信息
+            HStack {
+                Text(getStatusText())
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                Text("v1.6.1")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 16)
+        .background(.bar)
+    }
+    
+    // MARK: - 日志面板
+    private var logsPanelView: some View {
+        VStack(spacing: 0) {
+            // 面板标题
+            logsHeader
+            
+            Divider()
+            
+            // 日志内容
+            ScrollView {
+                VStack(spacing: 12) {
+                    ForEach(0..<3, id: \.self) { index in
+                        LogSlotCard(
+                            slotNumber: index + 1,
+                            logs: slotLogs[index],
+                            isActive: activeSlots[index] != nil,
+                            taskIndex: activeSlots[index]
+                        )
+                    }
+                }
+                .padding(16)
+            }
+            .background(Color(NSColor.textBackgroundColor))
+        }
+        .frame(minWidth: 500)
+    }
+    
+    // MARK: - 日志标题
+    private var logsHeader: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 13))
+                Text("下载日志")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.primary)
+            
+            Spacer()
+            
+            HStack(spacing: 16) {
+                // 并发指示器
+                HStack(spacing: 4) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(activeSlots[index] != nil ? Color.accentColor : Color.gray.opacity(0.3))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                
+                if isProcessing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.8)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+    
+    // MARK: - 状态文本
+    private func getStatusText() -> String {
+        let activeCount = activeSlots.compactMap { $0 }.count
+        let completedCount = completedTasks.count
+        let totalCount = urlInputs.filter { !$0.isEmpty }.count
+        
+        if isProcessing {
+            return "并发: \(activeCount) | 完成: \(completedCount)/\(totalCount)"
+        } else if completedCount > 0 {
+            return "已完成: \(completedCount) 个任务"
+        } else {
+            return "准备就绪"
+        }
     }
 
     private func startDownload() {
@@ -334,63 +417,221 @@ struct ContentView: View {
     }
 }
 
-// 独立的日志窗口组件
-struct LogSlotView: View {
-    let title: String
+// MARK: - 任务输入卡片
+struct TaskInputCard: View {
+    let index: Int
+    @Binding var url: String
+    let isCompleted: Bool
+    let activeSlot: Int?
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 标题行
+            HStack(spacing: 8) {
+                // 状态图标
+                ZStack {
+                    Circle()
+                        .fill(statusColor.opacity(0.15))
+                        .frame(width: 28, height: 28)
+                    
+                    Image(systemName: statusIcon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                }
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("视频 \(index + 1)")
+                        .font(.system(size: 12, weight: .medium))
+                    
+                    if let slot = activeSlot {
+                        Text("通道 \(slot + 1) 下载中")
+                            .font(.system(size: 10))
+                                .foregroundStyle(Color.accentColor)
+                    } else if isCompleted {
+                        Text("下载完成")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.green)
+                    } else if !url.isEmpty {
+                        Text("等待中")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                if !url.isEmpty && !isCompleted && activeSlot == nil {
+                    Button(action: { url = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            // 输入框
+            HStack(spacing: 10) {
+                Image(systemName: "link")
+                    .font(.system(size: 12))
+                    .foregroundStyle(isFocused ? Color.accentColor : .secondary)
+                
+                TextField("粘贴 YouTube 链接", text: $url)
+                    .font(.system(size: 13))
+                    .textFieldStyle(.plain)
+                    .focused($isFocused)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(NSColor.textBackgroundColor))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(isFocused ? Color.accentColor.opacity(0.5) : Color.gray.opacity(0.2), lineWidth: 1)
+                    )
+            )
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.gray.opacity(0.15), lineWidth: 1)
+                )
+        )
+        .opacity(isCompleted ? 0.7 : 1.0)
+    }
+    
+    private var statusIcon: String {
+        if isCompleted {
+            return "checkmark"
+        } else if activeSlot != nil {
+            return "arrow.down"
+        } else if !url.isEmpty {
+            return "play.circle"
+        } else {
+            return "video"
+        }
+    }
+    
+    private var statusColor: Color {
+        if isCompleted {
+            return .green
+        } else if activeSlot != nil {
+            return .accentColor
+        } else if !url.isEmpty {
+            return .orange
+        } else {
+            return .secondary
+        }
+    }
+}
+
+// MARK: - 日志槽卡片
+struct LogSlotCard: View {
+    let slotNumber: Int
     let logs: [String]
     let isActive: Bool
+    let taskIndex: Int?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 小标题栏
-            HStack {
-                Circle()
-                    .fill(isActive ? Color.green : Color.gray)
-                    .frame(width: 8, height: 8)
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.secondary)
+            // 头部
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    // 状态指示器
+                    ZStack {
+                        if isActive {
+                            Circle()
+                                .fill(Color.accentColor.opacity(0.2))
+                                .frame(width: 22, height: 22)
+                            
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Color.accentColor)
+                        } else {
+                            Circle()
+                                .fill(Color.gray.opacity(0.15))
+                                .frame(width: 22, height: 22)
+                            
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    Text("通道 \(slotNumber)")
+                        .font(.system(size: 12, weight: .medium))
+                    
+                    if let taskIdx = taskIndex {
+                        Text("• 视频 \(taskIdx + 1)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
                 Spacer()
+                
+                if isActive {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            // .background(Color.black.opacity(0.8)) // 移除标题栏背景
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.controlBackgroundColor))
             
+            Divider()
+            
+            // 日志内容
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         if logs.isEmpty {
-                            Text(isActive ? "准备中..." : "空闲")
-                                .font(.caption)
-                                .foregroundStyle(.gray)
-                                .padding(8)
+                            VStack(spacing: 4) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.tertiary)
+                                Text(isActive ? "准备下载..." : "空闲")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 60)
+                            .padding(.vertical, 20)
                         } else {
                             Text(logs.joined(separator: "\n"))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.primary) // 文字颜色改为自适应
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(Color(NSColor.textColor))
+                                .lineSpacing(2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(4)
+                                .padding(10)
                                 .id("bottom")
                         }
                     }
                 }
-                // .background(Color.black) // 移除内容区背景
-                .onChange(of: logs) {
-                    // 自动滚动到底部
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                .frame(minHeight: 80, maxHeight: 140)
+                .onChange(of: logs) { _ in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
                 }
             }
         }
-        .padding(6) // 增加内边距，防止文字被边框遮挡
-        .frame(maxHeight: .infinity)
+        .background(Color(NSColor.textBackgroundColor))
         .overlay(
-            Rectangle()
-                .strokeBorder(Color.blue, lineWidth: 8)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isActive ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.2), lineWidth: 1)
         )
+        .cornerRadius(8)
+        .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
     }
 }
 
 #Preview {
     ContentView()
+        .frame(width: 1000, height: 600)
 }

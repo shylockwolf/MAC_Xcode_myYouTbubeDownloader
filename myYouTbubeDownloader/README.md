@@ -56,7 +56,8 @@ Ensure you have the following installed on your Mac:
 
 ## 📝 Version History
 
-### v1.6 (Current)
+### v1.6.1 (Current)
+- Unified versioning.
 - Implemented parallel downloading (up to 3 concurrent tasks).
 - Redesigned log interface with 3 independent slot windows.
 - Enhanced UI with custom blue borders and improved layout.
