@@ -13,5 +13,6 @@ struct myYouTbubeDownloaderApp: App {
         WindowGroup {
             ContentView()
         }
+        .windowResizability(.contentSize)
     }
 }
