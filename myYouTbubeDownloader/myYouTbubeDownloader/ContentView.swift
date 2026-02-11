@@ -152,6 +152,18 @@ struct ContentView: View {
                 .controlSize(.regular)
                 .disabled(isProcessing || urlInputs.allSatisfy { $0.isEmpty })
                 .scaleEffect(buttonScale)
+                
+                // 退出按钮
+                Button(action: {
+                    NSApplication.shared.terminate(nil)
+                }) {
+                    Image(systemName: "power")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .help("退出应用")
             }
             .padding(.horizontal, 16)
             
@@ -163,7 +175,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v1.6.1")
+                Text("v1.6.3")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
