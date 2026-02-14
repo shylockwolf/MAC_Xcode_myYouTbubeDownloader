@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-1.6.3-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features
@@ -14,6 +14,10 @@ A powerful and user-friendly macOS application built with SwiftUI that serves as
 - **Format Conversion**: 
   - **Video**: Download best quality video.
   - **MP3**: One-click toggle to convert videos to MP3 format with embedded thumbnails.
+- **YouTube Subscriptions**: 
+  - **One-click Fetching**: Quickly fetch recent videos from your YouTube subscriptions.
+  - **Flexible Time Ranges**: Filter videos from the last 12, 24, 36, or 48 hours.
+  - **Direct Add**: Add subscription videos to the download queue with one click.
 - **Live Logs**: Real-time command execution logs with auto-scrolling terminal-like interface.
 - **Modern UI**: Clean sidebar layout with native macOS look and feel.
 - **Auto-setup**: Automatically detects and uses `yt-dlp` from Homebrew.
@@ -49,6 +53,7 @@ Ensure you have the following installed on your Mac:
 
 4. **How to Use**:
    - Paste YouTube video URLs into the input fields (Video 1 to Video 5).
+   - Or click "**查看订阅**" (View Subscriptions) to fetch and add videos from your YouTube feed.
    - Toggle "转换成 mp3" if you want audio only.
    - Click "**开始下载**" (Start Download).
    - Watch the logs for progress.
@@ -57,8 +62,19 @@ Ensure you have the following installed on your Mac:
 
 ## 📝 Version History
 
-### v1.6.3 (Current)
-- Updated version to 1.6.3.
+### v2.0.0 (Current)
+- **Major Update**: Rebranded and improved stability.
+- **Subscription Management**: Fully implemented YouTube subscription fetching with Chrome cookie support.
+- **UI/UX Enhancements**:
+  - New subscription window with detailed video information.
+  - Improved log display using high-performance `LazyVStack`.
+  - Added smooth auto-scrolling for logs.
+- **Stability Fixes**:
+  - Fixed issues where closing the subscription window might cause the main app to crash.
+  - Enhanced thread safety for background processes and UI updates.
+  - Added robust process cleanup and resource management.
+
+### v1.6.3
 - Added quick exit button for convenient application closure.
 
 ### v1.6.1

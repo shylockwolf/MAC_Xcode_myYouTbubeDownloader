@@ -9,14 +9,25 @@ import SwiftUI
 import Foundation
 import Combine
 
+// 通知名称 - 用于传递URL到主窗口
+extension Notification.Name {
+    static let addURLToDownload = Notification.Name("addURLToDownload")
+    static let addURLResult = Notification.Name("addURLResult")
+}
+
 struct SubscriptionsView: View {
     @State private var videos: [VideoItem] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var lastUpdated: Date?
     @State private var logs: [String] = []
+    @State private var selectedHours: Int = 36
+    @State private var addResultMessage: String?
+    @State private var showAddResult: Bool = false
     
     @State private var cancellables = Set<AnyCancellable>()
+    
+    let hourOptions = [12, 24, 36, 48]
     
     var body: some View {
         HSplitView {
@@ -40,9 +51,51 @@ struct SubscriptionsView: View {
         }
         .frame(minWidth: 1200, minHeight: 700)
         .background(.windowBackground)
-        .onAppear {
-            fetchSubscriptions()
+        .onReceive(NotificationCenter.default.publisher(for: .addURLResult)) { notification in
+            if let result = notification.userInfo?["result"] as? String {
+                addResultMessage = result
+                withAnimation {
+                    showAddResult = true
+                }
+            }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("cleanupSubscriptions"))) { _ in
+            // 清理所有Combine订阅
+            cancellables.removeAll()
+        }
+        .overlay(
+            Group {
+                if showAddResult, let message = addResultMessage {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 12) {
+                            Image(systemName: message.contains("失败") ? "xmark.circle.fill" : "checkmark.circle.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(message.contains("失败") ? .red : .green)
+                            Text(message)
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color(NSColor.controlBackgroundColor))
+                                .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+                        )
+                        .padding(.bottom, 20)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation {
+                                showAddResult = false
+                            }
+                        }
+                    }
+                }
+            }
+        )
     }
     
     // MARK: - 视频列表视图
@@ -58,6 +111,8 @@ struct SubscriptionsView: View {
                 loadingView
             } else if let error = errorMessage {
                 errorView(error: error)
+            } else if videos.isEmpty {
+                emptyStateView
             } else {
                 ScrollView {
                     VStack(spacing: 12) {
@@ -103,7 +158,7 @@ struct SubscriptionsView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("48小时内的视频")
+                        Text("\(selectedHours)小时内的视频")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -111,19 +166,63 @@ struct SubscriptionsView: View {
                 
                 Spacer()
                 
-                Button(action: fetchSubscriptions) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(width: 32, height: 32)
+                // 时间选择器 - 点击时间按钮直接获取
+                HStack(spacing: 6) {
+                    ForEach(hourOptions, id: \.self) { hours in
+                        Button(action: {
+                            selectedHours = hours
+                            fetchSubscriptions()
+                        }) {
+                            Text("\(hours)h")
+                                .font(.system(size: 11, weight: selectedHours == hours ? .semibold : .regular))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(selectedHours == hours ? Color.accentColor : Color.gray.opacity(0.2))
+                                .foregroundColor(selectedHours == hours ? .white : .secondary)
+                                .cornerRadius(4)
+                                .fixedSize()
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isLoading)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
         .background(.bar)
+    }
+    
+    // MARK: - 空状态视图
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "play.rectangle")
+                .font(.system(size: 48))
+                .foregroundStyle(.tertiary)
+            
+            Text("准备就绪")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.primary)
+            
+            Text("选择时间范围后点击「开始」按钮获取订阅视频")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Button(action: fetchSubscriptions) {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 14))
+                    Text("开始获取")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.textBackgroundColor))
     }
     
     // MARK: - 加载视图
@@ -199,6 +298,9 @@ struct SubscriptionsView: View {
         errorMessage = nil
         logs.removeAll()
         
+        // 清理旧的订阅
+        cancellables.removeAll()
+        
         // 订阅日志更新
         YouTubeSubscriptionsFetcher.shared.$logs
             .receive(on: DispatchQueue.main)
@@ -207,7 +309,7 @@ struct SubscriptionsView: View {
             }
             .store(in: &cancellables)
         
-        YouTubeSubscriptionsFetcher.shared.fetchVideos()
+        YouTubeSubscriptionsFetcher.shared.fetchVideos(hours: selectedHours)
             .receive(on: DispatchQueue.main)
             .sink(receiveCompletion: { completion in
                 isLoading = false
@@ -264,32 +366,46 @@ struct SubscriptionsView: View {
             
             Divider()
             
-            // 日志内容
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    if logs.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "doc.text")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.tertiary)
-                            Text("无日志信息")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 100)
-                        .padding(.vertical, 20)
-                    } else {
-                        // 使用文本视图支持选择和复制
-                        TextEditor(text: .constant(logs.joined(separator: "\n")))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.primary)
+            // 日志内容 - 自动滚屏
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if logs.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(.tertiary)
+                                Text("无日志信息")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 100)
+                            .padding(.vertical, 20)
+                        } else {
+                            // 使用列表显示日志，效率更高且支持自动滚屏
+                            ScrollViewReader { logProxy in
+                                ScrollView {
+                                    LazyVStack(alignment: .leading, spacing: 2) {
+                                        ForEach(Array(logs.enumerated()), id: \.offset) { _, log in
+                                            Text(log)
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .foregroundColor(.primary)
+                                                .textSelection(.enabled)
+                                        }
+                                        Color.clear.frame(height: 1).id("logBottom")
+                                    }
+                                }
+                                .onChange(of: logs.count) { _ in
+                                    logProxy.scrollTo("logBottom", anchor: .bottom)
+                                }
+                            }
+                            .frame(minHeight: 200)
                             .background(Color(NSColor.textBackgroundColor))
                             .cornerRadius(6)
-                            .frame(minHeight: 200)
-                            .disabled(true) // 只读
+                        }
                     }
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
         .frame(minWidth: 400, minHeight: 300)
@@ -320,7 +436,7 @@ struct VideoListItem: View {
                     .foregroundStyle(.secondary)
             }
             
-            // 视频链接
+            // 视频链接 + 添加按钮
             HStack {
                 Image(systemName: "link")
                     .font(.system(size: 10))
@@ -329,6 +445,30 @@ struct VideoListItem: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
+                
+                Spacer()
+                
+                // 添加到下载列表按钮
+                Button(action: {
+                    NotificationCenter.default.post(
+                        name: .addURLToDownload,
+                        object: nil,
+                        userInfo: ["url": video.url]
+                    )
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 11))
+                        Text("添加")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.accentColor.opacity(0.15))
+                    .foregroundColor(.accentColor)
+                    .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(12)
@@ -454,6 +594,26 @@ struct VideoDetailView: View {
     private var actionButtons: some View {
         VStack(spacing: 12) {
             Button(action: {
+                // 发送通知，将URL添加到主窗口的下载列表
+                NotificationCenter.default.post(
+                    name: .addURLToDownload,
+                    object: nil,
+                    userInfo: ["url": video.url]
+                )
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 14))
+                    Text("添加到下载列表")
+                        .font(.system(size: 14, weight: .medium))
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+            }
+            .buttonStyle(.borderedProminent)
+            
+            Button(action: {
                 // 打开视频链接
                 if let url = URL(string: video.url) {
                     NSWorkspace.shared.open(url)
@@ -469,7 +629,7 @@ struct VideoDetailView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
             
             Button(action: {
                 // 复制链接到剪贴板
@@ -494,16 +654,9 @@ struct VideoDetailView: View {
 // MARK: - 空详情视图
 struct EmptyDetailView: View {
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "film")
-                .font(.title)
-                .foregroundStyle(.tertiary)
-            Text("请选择一个视频查看详情")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(NSColor.windowBackgroundColor))
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(NSColor.windowBackgroundColor))
     }
 }
 
@@ -523,45 +676,102 @@ struct VideoItem: Identifiable, Equatable {
 }
 
 // MARK: - YouTube订阅获取器
-class YouTubeSubscriptionsFetcher {
+class YouTubeSubscriptionsFetcher: ObservableObject {
     static let shared = YouTubeSubscriptionsFetcher()
     
     // 日志信息
     @Published var logs: [String] = []
     
+    // 取消令牌
+    private var cancellationToken: Bool = false
+    
+    // 当前运行的Process
+    private var currentProcess: Process?
+    private var outputHandle: FileHandle?
+    private var errorHandle: FileHandle?
+    
     private init() {}
     
-    func fetchVideos() -> AnyPublisher<[VideoItem], Error> {
+    func appendLog(_ message: String) {
+        DispatchQueue.main.async {
+            self.logs.append(message)
+            // 限制日志数量，防止内存占用过大
+            if self.logs.count > 1000 {
+                self.logs.removeFirst(self.logs.count - 1000)
+            }
+        }
+    }
+    
+    func cancel() {
+        cancellationToken = true
+        // 终止当前进程
+        if let process = currentProcess {
+            if process.isRunning {
+                process.terminate()
+            }
+            currentProcess = nil
+        }
+        
+        // 在主线程清理句柄，避免竞争
+        DispatchQueue.main.async { [weak self] in
+            self?.outputHandle?.readabilityHandler = nil
+            self?.errorHandle?.readabilityHandler = nil
+            self?.outputHandle = nil
+            self?.errorHandle = nil
+        }
+    }
+    
+    func fetchVideos(hours: Int = 48) -> AnyPublisher<[VideoItem], Error> {
         return Future<[VideoItem], Error> { [weak self] promise in
             guard let self = self else { return }
             
+            // 重置取消令牌
+            self.cancellationToken = false
+            
             // 清空之前的日志
-            self.logs.removeAll()
-            self.logs.append("开始获取YouTube订阅内容...")
+            DispatchQueue.main.async {
+                self.logs.removeAll()
+                self.appendLog("开始获取YouTube订阅内容...")
+                self.appendLog("时间范围: \(hours)小时")
+            }
             
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
+                    // 检查是否已取消
+                    if self.cancellationToken { return }
+                    
                     // 检查yt-dlp是否存在
                     try self.checkYtDlpExists()
+                    
+                    // 检查是否已取消
+                    if self.cancellationToken { return }
                     
                     // 使用yt-dlp获取cookie并访问订阅页面
                     let subscriptionsPage = try self.fetchSubscriptionsPage()
                     
+                    // 检查是否已取消
+                    if self.cancellationToken { return }
+                    
                     // 解析页面内容，提取视频信息
                     let videos = try self.parseVideos(from: subscriptionsPage)
                     
-                    // 过滤出48小时内的视频
-                    let fortyEightHoursAgo = Date().addingTimeInterval(-48 * 60 * 60)
-                    let recentVideos = videos.filter { $0.publishDate >= fortyEightHoursAgo }
+                    // 过滤出指定时间内的视频
+                    let timeAgo = Date().addingTimeInterval(-Double(hours) * 60 * 60)
+                    let recentVideos = videos.filter { $0.publishDate >= timeAgo }
                     
                     // 按发布时间排序（最新的在前）
                     let sortedVideos = recentVideos.sorted(by: { $0.publishDate > $1.publishDate })
                     
-                    self.logs.append("成功获取到 \(sortedVideos.count) 个48小时内的视频")
+                    // 检查是否已取消
+                    if self.cancellationToken { return }
+                    
+                    self.appendLog("成功获取到 \(sortedVideos.count) 个\(hours)小时内的视频")
                     promise(.success(sortedVideos))
                 } catch {
-                    self.logs.append("错误: \(error.localizedDescription)")
-                    promise(.failure(error))
+                    if !self.cancellationToken {
+                        self.appendLog("错误: \(error.localizedDescription)")
+                        promise(.failure(error))
+                    }
                 }
             }
         }
@@ -576,6 +786,7 @@ class YouTubeSubscriptionsFetcher {
         var errorOutput: String = ""
         
         let process = Process()
+        self.currentProcess = process
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         
@@ -589,7 +800,8 @@ class YouTubeSubscriptionsFetcher {
         
         // 读取标准输出
         let outputHandle = outputPipe.fileHandleForReading
-        outputHandle.readabilityHandler = { fileHandle in
+        outputHandle.readabilityHandler = { [weak self] fileHandle in
+            guard let self = self, !self.cancellationToken else { return }
             let data = fileHandle.availableData
             if let string = String(data: data, encoding: .utf8) {
                 output += string
@@ -598,7 +810,8 @@ class YouTubeSubscriptionsFetcher {
         
         // 读取错误输出
         let errorHandle = errorPipe.fileHandleForReading
-        errorHandle.readabilityHandler = { fileHandle in
+        errorHandle.readabilityHandler = { [weak self] fileHandle in
+            guard let self = self, !self.cancellationToken else { return }
             let data = fileHandle.availableData
             if let string = String(data: data, encoding: .utf8) {
                 errorOutput += string
@@ -609,31 +822,33 @@ class YouTubeSubscriptionsFetcher {
             semaphore.signal()
         }
         
-        logs.append("检查yt-dlp是否存在...")
+        self.appendLog("检查yt-dlp是否存在...")
         
         do {
             try process.run()
             semaphore.wait()
+            self.currentProcess = nil
         } catch {
-            logs.append("检查过程出错: \(error.localizedDescription)")
+            self.currentProcess = nil
+            self.appendLog("检查过程出错: \(error.localizedDescription)")
             throw error
         }
         
         // 记录输出信息
         if !output.isEmpty {
-            logs.append("检查输出: \(output)")
+            self.appendLog("检查输出: \(output)")
         }
         if !errorOutput.isEmpty {
-            logs.append("检查错误: \(errorOutput)")
+            self.appendLog("检查错误: \(errorOutput)")
         }
         
         // 直接检查文件是否存在
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: ytDlpPath) {
             exists = true
-            logs.append("yt-dlp 已找到: \(ytDlpPath)")
+            self.appendLog("yt-dlp 已找到: \(ytDlpPath)")
         } else {
-            logs.append("yt-dlp 未找到: \(ytDlpPath)")
+            self.appendLog("yt-dlp 未找到: \(ytDlpPath)")
         }
         
         guard exists else {
@@ -653,6 +868,9 @@ class YouTubeSubscriptionsFetcher {
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
+        
+        // 保存引用以便取消时使用
+        self.currentProcess = process
         
         // 直接使用绝对路径
         let ytDlpPath = "/opt/homebrew/bin/yt-dlp"
@@ -679,74 +897,85 @@ class YouTubeSubscriptionsFetcher {
         
         // 读取标准输出
         let outputHandle = outputPipe.fileHandleForReading
-        outputHandle.readabilityHandler = { fileHandle in
+        self.outputHandle = outputHandle
+        outputHandle.readabilityHandler = { [weak self] fileHandle in
+            guard let self = self, !self.cancellationToken else { return }
             let data = fileHandle.availableData
-            if data.isEmpty {
-                return
-            }
+            if data.isEmpty { return }
             if let string = String(data: data, encoding: .utf8) {
                 output += string
-                self.logs.append("[输出] \(string.prefix(200))\(string.count > 200 ? "..." : "")")
+                self.appendLog("[输出] \(string.prefix(200))\(string.count > 200 ? "..." : "")")
             } else {
-                self.logs.append("[输出] 收到 \(data.count) 字节数据（无法解码为UTF-8）")
+                self.appendLog("[输出] 收到 \(data.count) 字节数据（无法解码为UTF-8）")
             }
         }
         
         // 读取错误输出
         let errorHandle = errorPipe.fileHandleForReading
-        errorHandle.readabilityHandler = { fileHandle in
+        self.errorHandle = errorHandle
+        errorHandle.readabilityHandler = { [weak self] fileHandle in
+            guard let self = self, !self.cancellationToken else { return }
             let data = fileHandle.availableData
-            if data.isEmpty {
-                return
-            }
+            if data.isEmpty { return }
             if let string = String(data: data, encoding: .utf8) {
                 errorOutput += string
-                self.logs.append("[错误] \(string)")
+                self.appendLog("[错误] \(string)")
             } else {
-                self.logs.append("[错误] 收到 \(data.count) 字节数据（无法解码为UTF-8）")
+                self.appendLog("[错误] 收到 \(data.count) 字节数据（无法解码为UTF-8）")
             }
         }
         
-        process.terminationHandler = { process in
+        process.terminationHandler = { [weak self] process in
+            guard let self = self else {
+                semaphore.signal()
+                return
+            }
             terminationStatus = process.terminationStatus
-            self.logs.append("命令执行完成，退出状态: \(process.terminationStatus)")
+            if !self.cancellationToken {
+                self.appendLog("命令执行完成，退出状态: \(process.terminationStatus)")
+            }
             semaphore.signal()
         }
         
-        self.logs.append("执行命令: \(ytDlpPath) --cookies-from-browser chrome --dump-json --skip-download --no-warnings --ignore-errors --format worst --playlist-items 1:20 https://www.youtube.com/feed/subscriptions")
-        self.logs.append("命令开始执行...")
+        self.appendLog("开始获取订阅页面内容...")
         
         do {
             try process.run()
-            self.logs.append("命令已启动，PID: \(process.processIdentifier)")
             
             // 设置超时时间为180秒（3分钟）
             let timeoutResult = semaphore.wait(timeout: .now() + 180)
             
             if timeoutResult == .timedOut {
-                self.logs.append("命令执行超时（180秒），强制终止...")
-                process.terminate()
+                if process.isRunning {
+                    self.appendLog("命令执行超时（180秒），强制终止...")
+                    process.terminate()
+                }
+                self.currentProcess = nil
                 throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 3, userInfo: [NSLocalizedDescriptionKey: "命令执行超时，请检查网络连接或cookie是否有效"])
             }
             
-            self.logs.append("命令执行完成，退出状态: \(terminationStatus)")
+            self.currentProcess = nil
+            if !self.cancellationToken {
+                self.appendLog("命令执行完成，退出状态: \(terminationStatus)")
+            }
         } catch let runError {
+            self.currentProcess = nil
             processError = runError
-            self.logs.append("命令执行失败: \(runError.localizedDescription)")
+            if !self.cancellationToken {
+                self.appendLog("命令执行失败: \(runError.localizedDescription)")
+            }
         }
         
-        // 关闭文件句柄
-        outputHandle.readabilityHandler = nil
-        errorHandle.readabilityHandler = nil
+        // 清理文件句柄
+        DispatchQueue.main.async { [weak self] in
+            outputHandle.readabilityHandler = nil
+            errorHandle.readabilityHandler = nil
+            self?.outputHandle = nil
+            self?.errorHandle = nil
+        }
         
-        // 记录输出和错误信息
-        self.logs.append("命令标准输出总长度: \(output.count) 字符")
-        self.logs.append("命令错误输出总长度: \(errorOutput.count) 字符")
-        
-        if !errorOutput.isEmpty {
-            // 只显示前500个字符，避免日志过长
-            let truncatedError = errorOutput.prefix(500) + (errorOutput.count > 500 ? "..." : "")
-            self.logs.append("命令错误输出: \(truncatedError)")
+        if self.cancellationToken {
+            throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 99, userInfo: [NSLocalizedDescriptionKey: "操作已取消"])
         }
         
         if let error = processError {
@@ -754,10 +983,10 @@ class YouTubeSubscriptionsFetcher {
         }
         
         guard !output.isEmpty else {
-            throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch subscriptions page, no output received"])
+            throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 1, userInfo: [NSLocalizedDescriptionKey: "未能获取到订阅内容，请检查Chrome浏览器是否已登录YouTube且已关闭所有相关窗口"])
         }
         
-        self.logs.append("成功获取订阅页面内容，开始解析...")
+        self.appendLog("成功获取订阅内容，开始解析...")
         return output
     }
     
@@ -768,27 +997,25 @@ class YouTubeSubscriptionsFetcher {
         // 分割JSON输出，每行一个视频
         let lines = jsonOutput.components(separatedBy: .newlines)
         
-        self.logs.append("开始解析 \(lines.count) 行JSON数据...")
+        self.appendLog("开始解析 \(lines.count) 行数据...")
         
         for (index, line) in lines.enumerated() where !line.isEmpty {
+            if self.cancellationToken { break }
+            
             do {
                 let data = line.data(using: .utf8)!
                 let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
                 
-                guard let videoJSON = json else {
-                    self.logs.append("第 \(index + 1) 行: 无法解析为JSON")
-                    continue
-                }
+                guard let videoJSON = json else { continue }
                 
                 // 提取视频信息 - 适应flat-playlist格式
                 if let title = videoJSON["title"] as? String,
-                   let url = videoJSON["webpage_url"] as? String ?? videoJSON["url"] as? String,
-                   let videoId = videoJSON["id"] as? String {
+                   let url = videoJSON["webpage_url"] as? String ?? videoJSON["url"] as? String {
                     
                     // 获取频道名称（可能不存在）
                     let channel = videoJSON["uploader"] as? String ?? videoJSON["channel"] as? String ?? "未知频道"
                     
-                    // 获取时间戳（flat-playlist模式下可能为null）
+                    // 获取时间戳
                     let timestamp = videoJSON["timestamp"] as? TimeInterval
                     let publishDate: Date
                     let publishTime: String
@@ -800,9 +1027,9 @@ class YouTubeSubscriptionsFetcher {
                         formatter.timeStyle = .short
                         publishTime = formatter.string(from: publishDate)
                     } else {
-                        // 如果没有时间戳，使用当前时间
+                        // 如果没有时间戳，尝试解析其他可能的日期字段
                         publishDate = Date()
-                        publishTime = "刚刚"
+                        publishTime = "未知时间"
                     }
                     
                     videos.append(VideoItem(
@@ -812,18 +1039,13 @@ class YouTubeSubscriptionsFetcher {
                         publishTime: publishTime,
                         publishDate: publishDate
                     ))
-                    
-                    self.logs.append("成功解析: \(title.prefix(50))...")
-                } else {
-                    self.logs.append("第 \(index + 1) 行: 缺少必要字段 (title, url, id)")
                 }
             } catch {
-                self.logs.append("第 \(index + 1) 行: 解析错误 - \(error.localizedDescription)")
                 continue
             }
         }
         
-        self.logs.append("成功解析出 \(videos.count) 个视频")
+        self.appendLog("成功解析出 \(videos.count) 个视频")
         return videos
     }
 }

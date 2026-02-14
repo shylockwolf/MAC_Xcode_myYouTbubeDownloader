@@ -26,6 +26,13 @@ struct ContentView: View {
     // 动画状态
     @State private var buttonScale: CGFloat = 1.0
     @State private var showCompletionAnimation = false
+    
+    // 订阅窗口控制器
+    @State private var subscriptionsController: SubscriptionsWindowController?
+    
+    // 添加URL结果消息
+    @State private var addURLMessage: String?
+    @State private var showAddURLMessage: Bool = false
 
     var body: some View {
         HSplitView {
@@ -37,6 +44,76 @@ struct ContentView: View {
         }
         .frame(minWidth: 1000, minHeight: 600)
         .background(.windowBackground)
+        .onReceive(NotificationCenter.default.publisher(for: .addURLToDownload)) { notification in
+            if let url = notification.userInfo?["url"] as? String {
+                addURLToFirstEmptySlot(url: url)
+            }
+        }
+        .overlay(
+            Group {
+                if showAddURLMessage, let message = addURLMessage {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 12) {
+                            Image(systemName: message.contains("失败") ? "xmark.circle.fill" : "checkmark.circle.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(message.contains("失败") ? .red : .green)
+                            Text(message)
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color(NSColor.controlBackgroundColor))
+                                .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+                        )
+                        .padding(.bottom, 20)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation {
+                                showAddURLMessage = false
+                            }
+                        }
+                    }
+                }
+            }
+        )
+    }
+    
+    // MARK: - 添加URL到第一个空位
+    private func addURLToFirstEmptySlot(url: String) {
+        // 查找第一个空的输入框
+        for index in 0..<urlInputs.count {
+            if urlInputs[index].isEmpty {
+                urlInputs[index] = url
+                addURLMessage = "已添加到下载位置 \(index + 1)"
+                withAnimation {
+                    showAddURLMessage = true
+                }
+                // 发送结果通知到订阅窗口
+                NotificationCenter.default.post(
+                    name: .addURLResult,
+                    object: nil,
+                    userInfo: ["result": "已添加到下载位置 \(index + 1)"]
+                )
+                return
+            }
+        }
+        // 没有空位
+        addURLMessage = "添加失败：下载列表已满"
+        withAnimation {
+            showAddURLMessage = true
+        }
+        // 发送结果通知到订阅窗口
+        NotificationCenter.default.post(
+            name: .addURLResult,
+            object: nil,
+            userInfo: ["result": "添加失败：下载列表已满"]
+        )
     }
     
     // MARK: - 侧边栏视图
@@ -118,22 +195,27 @@ struct ContentView: View {
             HStack(spacing: 12) {
                 // 订阅按钮
                 Button(action: openSubscriptionsWindow) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(width: 36, height: 36)
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("查看订阅")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .help("查看订阅")
                 
                 // 取消按钮
                 Button(action: cancelDownload) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .disabled(!isProcessing)
                 .help("取消下载")
                 
@@ -149,18 +231,18 @@ struct ContentView: View {
                     }
                     startDownload()
                 }) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: isProcessing ? "arrow.clockwise" : "arrow.down")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                         
                         Text(isProcessing ? "下载中..." : "开始下载")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 12, weight: .medium))
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .disabled(isProcessing || urlInputs.allSatisfy { $0.isEmpty })
                 .scaleEffect(buttonScale)
                 
@@ -169,11 +251,11 @@ struct ContentView: View {
                     NSApplication.shared.terminate(nil)
                 }) {
                     Image(systemName: "power")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .help("退出应用")
             }
             .padding(.horizontal, 16)
@@ -186,7 +268,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v1.6.3")
+                Text("v2.0.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -431,7 +513,9 @@ struct ContentView: View {
         
         for i in 0..<3 {
             if let task = downloadTasks[i] {
-                task.terminate()
+                if task.isRunning {
+                    task.terminate()
+                }
                 downloadTasks[i] = nil
                 activeSlots[i] = nil
                 appendLog(slotIndex: i, message: "--- 已取消 ---")
@@ -440,17 +524,65 @@ struct ContentView: View {
     }
     
     private func openSubscriptionsWindow() {
-        // 创建新窗口
-        let window = NSWindow(
-            contentRect: NSRect(x: 200, y: 200, width: 1000, height: 600),
+        if subscriptionsController == nil {
+            subscriptionsController = SubscriptionsWindowController {
+                self.subscriptionsController = nil
+            }
+        }
+        subscriptionsController?.showWindow()
+    }
+}
+
+// MARK: - 订阅窗口控制器
+class SubscriptionsWindowController: NSObject, NSWindowDelegate {
+    private var window: NSWindow?
+    private var onClose: () -> Void
+    
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+        super.init()
+    }
+    
+    func showWindow() {
+        if let window = window {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        
+        let newWindow = NSWindow(
+            contentRect: NSRect(x: 200, y: 200, width: 1200, height: 700),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
+        newWindow.title = "YouTube 订阅"
+        newWindow.isReleasedWhenClosed = false // 重要：手动管理生命周期
+        newWindow.delegate = self
         
-        window.title = "YouTube 订阅"
-        window.contentView = NSHostingView(rootView: SubscriptionsView())
-        window.makeKeyAndOrderFront(nil)
+        let subscriptionsView = SubscriptionsView()
+        newWindow.contentView = NSHostingView(rootView: subscriptionsView)
+        
+        self.window = newWindow
+        newWindow.makeKeyAndOrderFront(nil)
+        newWindow.center()
+    }
+    
+    func windowWillClose(_ notification: Notification) {
+        // 先取消正在进行的fetch操作
+        // 注意：由于 YouTubeSubscriptionsFetcher 定义在 SubscriptionsView.swift 中且为 internal，
+        // 在同一个模块下应该是可见的。如果编译器报错，可能是因为 SubscriptionsView.swift 编译失败。
+        YouTubeSubscriptionsFetcher.shared.cancel()
+        // 发送通知清理订阅
+        NotificationCenter.default.post(name: NSNotification.Name("cleanupSubscriptions"), object: nil)
+        
+        // 清理窗口资源
+        window?.delegate = nil
+        window = nil
+        
+        // 延迟通知外部控制器已关闭，确保窗口生命周期完全结束
+        DispatchQueue.main.async {
+            self.onClose()
+        }
     }
 }
 
