@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Foundation
+import AppKit
 
 struct ContentView: View {
     @State private var urlInputs = ["", "", "", "", ""]
@@ -115,6 +116,16 @@ struct ContentView: View {
             
             // 操作按钮
             HStack(spacing: 12) {
+                // 订阅按钮
+                Button(action: openSubscriptionsWindow) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .help("查看订阅")
+                
                 // 取消按钮
                 Button(action: cancelDownload) {
                     Image(systemName: "xmark")
@@ -426,6 +437,20 @@ struct ContentView: View {
                 appendLog(slotIndex: i, message: "--- 已取消 ---")
             }
         }
+    }
+    
+    private func openSubscriptionsWindow() {
+        // 创建新窗口
+        let window = NSWindow(
+            contentRect: NSRect(x: 200, y: 200, width: 1000, height: 600),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.title = "YouTube 订阅"
+        window.contentView = NSHostingView(rootView: SubscriptionsView())
+        window.makeKeyAndOrderFront(nil)
     }
 }
 
