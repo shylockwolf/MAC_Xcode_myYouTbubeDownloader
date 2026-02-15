@@ -778,7 +778,7 @@ struct LogSlotCard: View {
                     }
                 }
         .frame(minHeight: 120, maxHeight: .infinity)
-                .onChange(of: logs) { _ in
+                .onChange(of: logs) {
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo("bottom", anchor: .bottom)
                     }

@@ -404,7 +404,7 @@ struct SubscriptionsView: View {
                 .frame(minHeight: 200)
                 .background(Color(NSColor.textBackgroundColor))
                 .cornerRadius(6)
-                .onChange(of: logs.count) { _ in
+                .onChange(of: logs.count) {
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo("logBottom", anchor: .bottom)
                     }
@@ -1008,7 +1008,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         self.appendLog("开始解析 \(lines.count) 行数据...")
         
-        for (index, line) in lines.enumerated() where !line.isEmpty {
+        for (_, line) in lines.enumerated() where !line.isEmpty {
             if self.cancellationToken { break }
             
             do {
