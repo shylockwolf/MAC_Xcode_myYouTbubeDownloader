@@ -2,15 +2,16 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features
 
-- **Batch Downloading**: Support for inputting up to 5 video URLs simultaneously.
+- **Batch Downloading**: Support for inputting up to 9 video URLs simultaneously.
+- **Concurrent Downloads**: 3 parallel download channels for faster processing.
 - **Smart Status Indicators**: 
-  - Real-time progress monitoring.
-  - **Green Checkmark (✓)**: Visual confirmation for successfully completed downloads.
+  - Real-time progress monitoring for each download channel.
+  - Visual status icons for each video slot (ready, downloading, completed).
 - **Format Conversion**: 
   - **Video**: Download best quality video.
   - **MP3**: One-click toggle to convert videos to MP3 format with embedded thumbnails.
@@ -18,10 +19,12 @@ A powerful and user-friendly macOS application built with SwiftUI that serves as
   - **One-click Fetching**: Quickly fetch recent videos from your YouTube subscriptions.
   - **Flexible Time Ranges**: Filter videos from the last 12, 24, 36, or 48 hours.
   - **Direct Add**: Add subscription videos to the download queue with one click.
+  - **Video Details**: View title, channel, publish time, and direct links.
 - **Live Logs**: Real-time command execution logs with auto-scrolling terminal-like interface.
+- **Download Records**: Track all completed downloads in a dedicated section.
 - **Modern UI**: Clean sidebar layout with native macOS look and feel.
 - **Auto-setup**: Automatically detects and uses `yt-dlp` from Homebrew.
-- **Quick Exit**: One-click exit button to close the application.
+- **Cookie Support**: Uses Chrome cookies to access subscription feeds without manual login.
 
 ## 🛠 Prerequisites
 
@@ -37,6 +40,7 @@ Ensure you have the following installed on your Mac:
    ```bash
    brew install ffmpeg
    ```
+5. **Chrome Browser** (Required for YouTube subscription feature - must be logged into YouTube)
 
 ## 🚀 Installation & Usage
 
@@ -52,17 +56,32 @@ Ensure you have the following installed on your Mac:
    Press `Command + R` to launch the application.
 
 4. **How to Use**:
-   - Paste YouTube video URLs into the input fields (Video 1 to Video 5).
+   - Paste YouTube video URLs into the input fields (Video 1 to Video 9).
    - Or click "**查看订阅**" (View Subscriptions) to fetch and add videos from your YouTube feed.
-   - Toggle "转换成 mp3" if you want audio only.
+   - Toggle "转换为 MP3 格式" if you want audio only.
    - Click "**开始下载**" (Start Download).
-   - Watch the logs for progress.
-   - Once finished, a **Green Checkmark (✓)** will appear next to the completed video.
+   - Watch the logs for progress in the 3 download channels.
    - Files are saved to your `Downloads` folder.
+   - Use "**取消下载**" (Cancel Download) to stop ongoing downloads.
+   - Use "**退出应用**" (Exit App) to close the application.
 
 ## 📝 Version History
 
-### v2.0.0 (Current)
+### v2.1.0 (Current)
+- **Expanded Capacity**: Increased from 5 to 9 video input slots.
+- **Concurrent Downloads**: Added 3 parallel download channels with independent logs.
+- **UI Improvements**:
+  - Redesigned button layout with text labels ("查看订阅", "取消下载", "开始下载", "退出应用").
+  - Added download records section to track completed downloads.
+  - Improved log panel heights for better visibility.
+  - Status bar now pushed to bottom of window.
+- **Subscription Window**:
+  - Fixed crash issues when closing the subscription window.
+  - Improved auto-scrolling for execution logs.
+  - Better resource cleanup and process management.
+- **Stability**: Enhanced thread safety and memory management.
+
+### v2.0.0
 - **Major Update**: Rebranded and improved stability.
 - **Subscription Management**: Fully implemented YouTube subscription fetching with Chrome cookie support.
 - **UI/UX Enhancements**:
@@ -94,9 +113,13 @@ Ensure you have the following installed on your Mac:
 ## ⚠️ Troubleshooting
 
 - **Download Fails?** 
-  Check the "运行日志" (Run Log) on the right side.
+  Check the "下载日志" (Download Log) on the right side.
 - **"Command not found"?** 
   Ensure `yt-dlp` is installed at `/opt/homebrew/bin/yt-dlp`. If you use an Intel Mac, you might need to adjust the path in the source code (`ContentView.swift`).
+- **Subscription Fetch Fails?**
+  - Make sure Chrome browser is installed and you're logged into YouTube.
+  - Close all Chrome windows before fetching subscriptions.
+  - Check that cookies are accessible.
 
 ## 📄 License
 

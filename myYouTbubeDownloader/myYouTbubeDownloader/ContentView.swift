@@ -10,7 +10,8 @@ import Foundation
 import AppKit
 
 struct ContentView: View {
-    @State private var urlInputs = ["", "", "", "", ""]
+    @State private var urlInputs = ["", "", "", "", "", "", "", "", ""]
+    @State private var downloadRecords: [String] = []
     
     // 多通道并发支持
     @State private var slotLogs: [[String]] = [[], [], []]
@@ -42,7 +43,7 @@ struct ContentView: View {
             // 右侧：现代化日志面板
             logsPanelView
         }
-        .frame(minWidth: 1000, minHeight: 600)
+        .frame(minWidth: 1100, minHeight: 600)
         .background(.windowBackground)
         .onReceive(NotificationCenter.default.publisher(for: .addURLToDownload)) { notification in
             if let url = notification.userInfo?["url"] as? String {
@@ -68,7 +69,7 @@ struct ContentView: View {
                                 .fill(Color(NSColor.controlBackgroundColor))
                                 .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
                         )
-                        .padding(.bottom, 20)
+                        .padding(.bottom, 12)
                     }
                     .frame(maxWidth: .infinity)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -98,7 +99,7 @@ struct ContentView: View {
                 NotificationCenter.default.post(
                     name: .addURLResult,
                     object: nil,
-                    userInfo: ["result": "已添加到下载位置 \(index + 1)"]
+                    userInfo: ["result": "已添加到下载位置 \(index + 1)", "url": url]
                 )
                 return
             }
@@ -112,7 +113,7 @@ struct ContentView: View {
         NotificationCenter.default.post(
             name: .addURLResult,
             object: nil,
-            userInfo: ["result": "添加失败：下载列表已满"]
+            userInfo: ["result": "添加失败：下载列表已满", "url": url]
         )
     }
     
@@ -125,19 +126,18 @@ struct ContentView: View {
             Divider()
             
             // 任务列表
-            ScrollView {
-                VStack(spacing: 16) {
-                    ForEach(0..<5, id: \.self) { index in
+            VStack(spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                    ForEach(0..<9, id: \.self) { index in
                         TaskInputCard(
                             index: index,
                             url: $urlInputs[index],
                             isCompleted: completedTasks.contains(index),
                             activeSlot: activeSlots.firstIndex(of: index)
                         )
-                        .transition(.opacity.combined(with: .scale))
                     }
                 }
-                .padding(20)
+                .padding(16)
             }
             
             Divider()
@@ -145,7 +145,7 @@ struct ContentView: View {
             // 控制区域
             controlSection
         }
-        .frame(minWidth: 320, maxWidth: 380)
+        .frame(minWidth: 560, maxWidth: 640, maxHeight: .infinity, alignment: .top)
         .background(Color(NSColor.windowBackgroundColor))
     }
     
@@ -168,8 +168,8 @@ struct ContentView: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
         }
         .background(.bar)
     }
@@ -189,18 +189,14 @@ struct ContentView: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 12)
             
             // 操作按钮
             HStack(spacing: 12) {
                 // 订阅按钮
                 Button(action: openSubscriptionsWindow) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("查看订阅")
-                            .font(.system(size: 12, weight: .medium))
-                    }
+                    Text("查看订阅")
+                        .font(.system(size: 12, weight: .medium))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                 }
@@ -210,14 +206,14 @@ struct ContentView: View {
                 
                 // 取消按钮
                 Button(action: cancelDownload) {
-                    Image(systemName: "xmark")
+                    Text("取消下载")
                         .font(.system(size: 12, weight: .medium))
-                        .frame(width: 36, height: 36)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!isProcessing)
-                .help("取消下载")
                 
                 // 主按钮
                 Button(action: {
@@ -250,15 +246,20 @@ struct ContentView: View {
                 Button(action: {
                     NSApplication.shared.terminate(nil)
                 }) {
-                    Image(systemName: "power")
+                    Text("退出应用")
                         .font(.system(size: 12, weight: .medium))
-                        .frame(width: 36, height: 36)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help("退出应用")
             }
             .padding(.horizontal, 16)
+
+            DownloadRecordsCard(records: downloadRecords)
+                .padding(.horizontal, 12)
+            
+            Spacer()
             
             // 状态信息
             HStack {
@@ -268,13 +269,13 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.0.0")
+                Text("v2.1.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
+            .padding(.bottom, 8)
         }
-        .padding(.vertical, 16)
         .background(.bar)
     }
     
@@ -298,11 +299,11 @@ struct ContentView: View {
                         )
                     }
                 }
-                .padding(16)
+                .padding(12)
             }
             .background(Color(NSColor.textBackgroundColor))
         }
-        .frame(minWidth: 500)
+        .frame(minWidth: 500, maxHeight: .infinity, alignment: .top)
     }
     
     // MARK: - 日志标题
@@ -335,8 +336,8 @@ struct ContentView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .background(.bar)
     }
     
@@ -355,6 +356,21 @@ struct ContentView: View {
         }
     }
 
+    private func extractFinalFilename(from logs: [String]) -> String? {
+        let exts = [".mp3", ".m4a", ".wav", ".flac", ".aac", ".mp4", ".webm", ".mkv"]
+        for line in logs.reversed() {
+            if let range = line.range(of: "Destination: ") {
+                let name = String(line[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { return name }
+            }
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let ext = exts.first(where: { trimmed.lowercased().hasSuffix($0) }) {
+                return trimmed.components(separatedBy: " ").last(where: { $0.lowercased().hasSuffix(ext) })
+            }
+        }
+        return nil
+    }
+
     private func startDownload() {
         isProcessing = true
         completedTasks.removeAll()
@@ -367,7 +383,7 @@ struct ContentView: View {
         
         // 收集任务
         pendingTasks = []
-        for index in 0..<5 {
+        for index in 0..<9 {
             if !urlInputs[index].isEmpty {
                 let url = urlInputs[index]
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -436,7 +452,11 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 if success {
                     self.appendLog(slotIndex: slotIndex, message: "✓ 视频 \(index + 1) 下载完成")
-                    self.completedTasks.insert(index)
+                    self.urlInputs[index] = ""
+                    self.completedTasks.remove(index)
+                    if let name = self.extractFinalFilename(from: self.slotLogs[slotIndex]) {
+                        self.downloadRecords.append(name)
+                    }
                 } else {
                     self.appendLog(slotIndex: slotIndex, message: "✗ 视频 \(index + 1) 下载失败")
                 }
@@ -595,79 +615,54 @@ struct TaskInputCard: View {
     @FocusState private var isFocused: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // 标题行
-            HStack(spacing: 8) {
-                // 状态图标
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
                 ZStack {
                     Circle()
                         .fill(statusColor.opacity(0.15))
-                        .frame(width: 28, height: 28)
-                    
+                        .frame(width: 18, height: 18)
                     Image(systemName: statusIcon)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(statusColor)
                 }
-                
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("视频 \(index + 1)")
-                        .font(.system(size: 12, weight: .medium))
-                    
-                    if let slot = activeSlot {
-                        Text("通道 \(slot + 1) 下载中")
-                            .font(.system(size: 10))
-                                .foregroundStyle(Color.accentColor)
-                    } else if isCompleted {
-                        Text("下载完成")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.green)
-                    } else if !url.isEmpty {
-                        Text("等待中")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
+                Text("视频 \(index + 1)")
+                    .font(.system(size: 11, weight: .medium))
                 Spacer()
-                
                 if !url.isEmpty && !isCompleted && activeSlot == nil {
                     Button(action: { url = "" }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary.opacity(0.5))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            
-            // 输入框
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: "link")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(isFocused ? Color.accentColor : .secondary)
-                
                 TextField("粘贴 YouTube 链接", text: $url)
-                    .font(.system(size: 13))
+                    .font(.system(size: 12))
                     .textFieldStyle(.plain)
                     .focused($isFocused)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(Color(NSColor.textBackgroundColor))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 6)
                             .stroke(isFocused ? Color.accentColor.opacity(0.5) : Color.gray.opacity(0.2), lineWidth: 1)
                     )
             )
         }
-        .padding(12)
+        .padding(6)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color(NSColor.controlBackgroundColor))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.gray.opacity(0.15), lineWidth: 1)
                 )
         )
@@ -782,7 +777,7 @@ struct LogSlotCard: View {
                         }
                     }
                 }
-                .frame(minHeight: 80, maxHeight: 140)
+        .frame(minHeight: 120, maxHeight: .infinity)
                 .onChange(of: logs) { _ in
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo("bottom", anchor: .bottom)
@@ -800,7 +795,58 @@ struct LogSlotCard: View {
     }
 }
 
+struct DownloadRecordsCard: View {
+    let records: [String]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.2))
+                            .frame(width: 22, height: 22)
+                        Image(systemName: "tray.full")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    Text("下载记录")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.controlBackgroundColor))
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    if records.isEmpty {
+                        Text("暂无记录")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(records.enumerated()), id: \.offset) { idx, name in
+                            Text("\(idx + 1). \(name)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+                .padding(10)
+            }
+            .frame(minHeight: 80, maxHeight: 150)
+        }
+        .background(Color(NSColor.textBackgroundColor))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+        .cornerRadius(8)
+        .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+    }
+}
+
 #Preview {
     ContentView()
-        .frame(width: 1000, height: 600)
+        .frame(width: 1100, height: 680)
 }

@@ -24,6 +24,7 @@ struct SubscriptionsView: View {
     @State private var selectedHours: Int = 36
     @State private var addResultMessage: String?
     @State private var showAddResult: Bool = false
+    @State private var addedURLSet: Set<String> = []
     
     @State private var cancellables = Set<AnyCancellable>()
     
@@ -39,7 +40,7 @@ struct SubscriptionsView: View {
                 HSplitView {
                     // 上半部分：视频详情
                     if let selectedVideo = videos.first(where: { $0.isSelected }) {
-                        VideoDetailView(video: selectedVideo)
+                        VideoDetailView(video: selectedVideo, isAdded: addedURLSet.contains(selectedVideo.url))
                     } else {
                         EmptyDetailView()
                     }
@@ -57,6 +58,11 @@ struct SubscriptionsView: View {
                 withAnimation {
                     showAddResult = true
                 }
+            }
+            if let url = notification.userInfo?["url"] as? String,
+               let result = notification.userInfo?["result"] as? String,
+               result.contains("已添加到下载位置") {
+                addedURLSet.insert(url)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("cleanupSubscriptions"))) { _ in
@@ -117,7 +123,7 @@ struct SubscriptionsView: View {
                 ScrollView {
                     VStack(spacing: 12) {
                         ForEach($videos) { $video in
-                            VideoListItem(video: $video)
+                            VideoListItem(video: $video, isAdded: addedURLSet.contains(video.url))
                                 .onTapGesture {
                                     // 取消其他视频的选择状态
                                     for index in videos.indices {
@@ -382,31 +388,29 @@ struct SubscriptionsView: View {
                             .frame(maxWidth: .infinity, minHeight: 100)
                             .padding(.vertical, 20)
                         } else {
-                            // 使用列表显示日志，效率更高且支持自动滚屏
-                            ScrollViewReader { logProxy in
-                                ScrollView {
-                                    LazyVStack(alignment: .leading, spacing: 2) {
-                                        ForEach(Array(logs.enumerated()), id: \.offset) { _, log in
-                                            Text(log)
-                                                .font(.system(size: 11, design: .monospaced))
-                                                .foregroundColor(.primary)
-                                                .textSelection(.enabled)
-                                        }
-                                        Color.clear.frame(height: 1).id("logBottom")
-                                    }
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(Array(logs.enumerated()), id: \.offset) { _, log in
+                                    Text(log)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.primary)
+                                        .textSelection(.enabled)
                                 }
-                                .onChange(of: logs.count) { _ in
-                                    logProxy.scrollTo("logBottom", anchor: .bottom)
-                                }
+                                Color.clear.frame(height: 1).id("logBottom")
                             }
-                            .frame(minHeight: 200)
-                            .background(Color(NSColor.textBackgroundColor))
-                            .cornerRadius(6)
+                            .padding(8)
                         }
                     }
-                    .padding(16)
+                }
+                .frame(minHeight: 200)
+                .background(Color(NSColor.textBackgroundColor))
+                .cornerRadius(6)
+                .onChange(of: logs.count) { _ in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("logBottom", anchor: .bottom)
+                    }
                 }
             }
+            .padding(16)
         }
         .frame(minWidth: 400, minHeight: 300)
         .background(Color(NSColor.windowBackgroundColor))
@@ -416,6 +420,7 @@ struct SubscriptionsView: View {
 // MARK: - 视频列表项
 struct VideoListItem: View {
     @Binding var video: VideoItem
+    let isAdded: Bool
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -459,16 +464,17 @@ struct VideoListItem: View {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 11))
-                        Text("添加")
+                        Text(isAdded ? "成功添加" : "添加")
                             .font(.system(size: 11, weight: .medium))
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.accentColor.opacity(0.15))
-                    .foregroundColor(.accentColor)
+                    .background((isAdded ? Color.gray.opacity(0.15) : Color.accentColor.opacity(0.15)))
+                    .foregroundColor(isAdded ? .secondary : .accentColor)
                     .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
+                .disabled(isAdded)
             }
         }
         .padding(12)
@@ -486,6 +492,7 @@ struct VideoListItem: View {
 // MARK: - 视频详情视图
 struct VideoDetailView: View {
     let video: VideoItem
+    let isAdded: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -604,7 +611,7 @@ struct VideoDetailView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 14))
-                    Text("添加到下载列表")
+                    Text(isAdded ? "成功添加" : "添加到下载列表")
                         .font(.system(size: 14, weight: .medium))
                     Spacer()
                 }
@@ -612,6 +619,8 @@ struct VideoDetailView: View {
                 .frame(height: 40)
             }
             .buttonStyle(.borderedProminent)
+            .tint(isAdded ? .gray : .accentColor)
+            .disabled(isAdded)
             
             Button(action: {
                 // 打开视频链接
