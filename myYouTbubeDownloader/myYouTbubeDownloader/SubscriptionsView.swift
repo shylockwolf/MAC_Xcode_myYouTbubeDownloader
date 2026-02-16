@@ -35,22 +35,20 @@ struct SubscriptionsView: View {
             // 左侧：视频列表
             videoListView
             
+            // 右侧：视频详情和日志
             VStack(spacing: 0) {
-                // 右侧：视频详情和日志
-                HSplitView {
+                if let selectedVideo = videos.first(where: { $0.isSelected }) {
                     // 上半部分：视频详情
-                    if let selectedVideo = videos.first(where: { $0.isSelected }) {
-                        VideoDetailView(video: selectedVideo, isAdded: addedURLSet.contains(selectedVideo.url))
-                    } else {
-                        EmptyDetailView()
-                    }
+                    VideoDetailView(video: selectedVideo, isAdded: addedURLSet.contains(selectedVideo.url))
                     
-                    // 下半部分：日志面板
-                    logsPanelView
+                    Divider()
                 }
+                
+                // 下半部分：日志面板
+                logsPanelView
             }
         }
-        .frame(minWidth: 1200, minHeight: 700)
+        .frame(minWidth: 840, minHeight: 700)
         .background(.windowBackground)
         .onReceive(NotificationCenter.default.publisher(for: .addURLResult)) { notification in
             if let result = notification.userInfo?["result"] as? String {
@@ -143,13 +141,14 @@ struct SubscriptionsView: View {
             // 底部控制栏
             bottomControlBar
         }
-        .frame(minWidth: 400, maxWidth: 500)
+        .frame(minWidth: 300, maxWidth: 375)
         .background(Color(NSColor.windowBackgroundColor))
     }
     
     // MARK: - 列表标题
     private var listHeader: some View {
         VStack(spacing: 8) {
+            // 第一行：标题
             HStack(spacing: 10) {
                 Image(systemName: "star.fill")
                     .font(.title2)
@@ -171,26 +170,41 @@ struct SubscriptionsView: View {
                 }
                 
                 Spacer()
-                
-                // 时间选择器 - 点击时间按钮直接获取
-                HStack(spacing: 6) {
-                    ForEach(hourOptions, id: \.self) { hours in
-                        Button(action: {
-                            selectedHours = hours
-                            fetchSubscriptions()
-                        }) {
-                            Text("\(hours)h")
-                                .font(.system(size: 11, weight: selectedHours == hours ? .semibold : .regular))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(selectedHours == hours ? Color.accentColor : Color.gray.opacity(0.2))
-                                .foregroundColor(selectedHours == hours ? .white : .secondary)
-                                .cornerRadius(4)
-                                .fixedSize()
-                        }
-                        .buttonStyle(.plain)
+            }
+            
+            // 第二行：时间选择器和开始按钮
+            HStack(spacing: 6) {
+                ForEach(hourOptions, id: \.self) { hours in
+                    Button(action: {
+                        selectedHours = hours
+                    }) {
+                        Text("\(hours)h")
+                            .font(.system(size: 11, weight: selectedHours == hours ? .semibold : .regular))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(selectedHours == hours ? Color.accentColor : Color.gray.opacity(0.2))
+                            .foregroundColor(selectedHours == hours ? .white : .secondary)
+                            .cornerRadius(4)
+                            .fixedSize()
                     }
+                    .buttonStyle(.plain)
                 }
+                
+                // 开始获取按钮
+                Button(action: fetchSubscriptions) {
+                    Text("开始")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(4)
+                        .fixedSize()
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+                
+                Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -213,19 +227,6 @@ struct SubscriptionsView: View {
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            
-            Button(action: fetchSubscriptions) {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 14))
-                    Text("开始获取")
-                        .font(.system(size: 14, weight: .medium))
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.textBackgroundColor))
@@ -412,7 +413,7 @@ struct SubscriptionsView: View {
             }
             .padding(16)
         }
-        .frame(minWidth: 400, minHeight: 300)
+        .frame(minWidth: 140, minHeight: 300)
         .background(Color(NSColor.windowBackgroundColor))
     }
 }
@@ -513,7 +514,7 @@ struct VideoDetailView: View {
                 .padding(24)
             }
         }
-        .frame(minWidth: 500)
+        .frame(minWidth: 250)
         .background(Color(NSColor.windowBackgroundColor))
     }
     
@@ -657,15 +658,6 @@ struct VideoDetailView: View {
             }
             .buttonStyle(.bordered)
         }
-    }
-}
-
-// MARK: - 空详情视图
-struct EmptyDetailView: View {
-    var body: some View {
-        Color.clear
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(NSColor.windowBackgroundColor))
     }
 }
 

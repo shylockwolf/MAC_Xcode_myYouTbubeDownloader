@@ -269,7 +269,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.1.0")
+                Text("v2.2.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -287,20 +287,19 @@ struct ContentView: View {
             
             Divider()
             
-            // 日志内容
-            ScrollView {
-                VStack(spacing: 12) {
-                    ForEach(0..<3, id: \.self) { index in
-                        LogSlotCard(
-                            slotNumber: index + 1,
-                            logs: slotLogs[index],
-                            isActive: activeSlots[index] != nil,
-                            taskIndex: activeSlots[index]
-                        )
-                    }
+            // 日志内容 - 三个通道平分高度
+            VStack(spacing: 12) {
+                ForEach(0..<3, id: \.self) { index in
+                    LogSlotCard(
+                        slotNumber: index + 1,
+                        logs: slotLogs[index],
+                        isActive: activeSlots[index] != nil,
+                        taskIndex: activeSlots[index]
+                    )
+                    .frame(maxHeight: .infinity)
                 }
-                .padding(12)
             }
+            .padding(12)
             .background(Color(NSColor.textBackgroundColor))
         }
         .frame(minWidth: 500, maxHeight: .infinity, alignment: .top)
@@ -570,7 +569,7 @@ class SubscriptionsWindowController: NSObject, NSWindowDelegate {
         }
         
         let newWindow = NSWindow(
-            contentRect: NSRect(x: 200, y: 200, width: 1200, height: 700),
+            contentRect: NSRect(x: 200, y: 200, width: 840, height: 700),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -777,7 +776,7 @@ struct LogSlotCard: View {
                         }
                     }
                 }
-        .frame(minHeight: 120, maxHeight: .infinity)
+                .frame(maxHeight: .infinity)
                 .onChange(of: logs) {
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo("bottom", anchor: .bottom)

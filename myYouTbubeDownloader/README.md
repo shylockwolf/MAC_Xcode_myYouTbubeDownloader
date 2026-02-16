@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features
@@ -42,6 +42,19 @@ Ensure you have the following installed on your Mac:
    ```
 5. **Chrome Browser** (Required for YouTube subscription feature - must be logged into YouTube)
 
+## 📦 Dependencies
+
+| Dependency | Version | Purpose | Installation |
+|------------|---------|---------|--------------|
+| yt-dlp | Latest | YouTube video downloader engine | `brew install yt-dlp` |
+| ffmpeg | Latest | Video/audio format conversion | `brew install ffmpeg` |
+| Chrome | Any | Cookie extraction for YouTube subscriptions | [Download Chrome](https://www.google.com/chrome/) |
+
+### Swift Frameworks (Built-in)
+- **SwiftUI** - Modern declarative UI framework
+- **Combine** - Reactive programming for async operations
+- **Foundation** - Core macOS APIs
+
 ## 🚀 Installation & Usage
 
 1. **Clone the repository**:
@@ -67,7 +80,21 @@ Ensure you have the following installed on your Mac:
 
 ## 📝 Version History
 
-### v2.1.0 (Current)
+### v2.2.0 (Current)
+- **UI Optimizations**:
+  - Redesigned subscription window layout with two-row header.
+  - Reduced window widths for better screen utilization.
+  - Three download channels now equally share available height.
+  - Added "开始" button for manual fetch control.
+- **Improved UX**:
+  - Time selection buttons (12h/24h/36h/48h) only change selection, not auto-fetch.
+  - Added success notification when adding URL to download slot (auto-dismiss after 2s).
+  - Removed empty state placeholder when no video selected.
+- **Code Quality**:
+  - Added .gitignore for Xcode user state files.
+  - Fixed deprecated onChange syntax.
+
+### v2.1.0
 - **Expanded Capacity**: Increased from 5 to 9 video input slots.
 - **Concurrent Downloads**: Added 3 parallel download channels with independent logs.
 - **UI Improvements**:
