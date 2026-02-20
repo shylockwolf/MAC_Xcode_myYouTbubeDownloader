@@ -741,14 +741,14 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                     // 检查是否已取消
                     if self.cancellationToken { return }
                     
-                    // 检查yt-dlp是否存在
-                    try self.checkYtDlpExists()
+                    // 检查yt-dlp是否存在并获取可执行路径
+                    let ytDlpPath = try self.checkYtDlpExists()
                     
                     // 检查是否已取消
                     if self.cancellationToken { return }
                     
                     // 使用yt-dlp获取cookie并访问订阅页面
-                    let subscriptionsPage = try self.fetchSubscriptionsPage()
+                    let subscriptionsPage = try self.fetchSubscriptionsPage(ytDlpPath: ytDlpPath)
                     
                     // 检查是否已取消
                     if self.cancellationToken { return }
@@ -780,85 +780,66 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
     }
     
     // MARK: - 检查yt-dlp是否存在
-    private func checkYtDlpExists() throws {
-        let semaphore = DispatchSemaphore(value: 0)
-        var exists = false
-        var output: String = ""
-        var errorOutput: String = ""
+    private func checkYtDlpExists() throws -> String {
+        appendLog("检查yt-dlp是否存在...")
         
+        let fileManager = FileManager.default
+        
+        // 常见安装路径：Apple Silicon 与 Intel
+        let candidatePaths = [
+            "/opt/homebrew/bin/yt-dlp",
+            "/usr/local/bin/yt-dlp"
+        ]
+        
+        for path in candidatePaths {
+            if fileManager.isExecutableFile(atPath: path) {
+                appendLog("yt-dlp 已找到: \(path)")
+                return path
+            } else {
+                appendLog("未在 \(path) 找到 yt-dlp")
+            }
+        }
+        
+        // 尝试通过 PATH 查找
         let process = Process()
-        self.currentProcess = process
         let outputPipe = Pipe()
-        let errorPipe = Pipe()
         
-        // 直接使用绝对路径检查
-        let ytDlpPath = "/opt/homebrew/bin/yt-dlp"
-        
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", "echo $PATH && which yt-dlp && ls -la \(ytDlpPath)"]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["bash", "-lc", "which yt-dlp || command -v yt-dlp"]
         process.standardOutput = outputPipe
-        process.standardError = errorPipe
         
-        // 读取标准输出
-        let outputHandle = outputPipe.fileHandleForReading
-        outputHandle.readabilityHandler = { [weak self] fileHandle in
-            guard let self = self, !self.cancellationToken else { return }
-            let data = fileHandle.availableData
-            if let string = String(data: data, encoding: .utf8) {
-                output += string
-            }
-        }
-        
-        // 读取错误输出
-        let errorHandle = errorPipe.fileHandleForReading
-        errorHandle.readabilityHandler = { [weak self] fileHandle in
-            guard let self = self, !self.cancellationToken else { return }
-            let data = fileHandle.availableData
-            if let string = String(data: data, encoding: .utf8) {
-                errorOutput += string
-            }
-        }
-        
-        process.terminationHandler = { _ in
-            semaphore.signal()
-        }
-        
-        self.appendLog("检查yt-dlp是否存在...")
+        var environment = ProcessInfo.processInfo.environment
+        let originalPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + originalPath
+        process.environment = environment
         
         do {
             try process.run()
-            semaphore.wait()
-            self.currentProcess = nil
+            process.waitUntilExit()
+            
+            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !output.isEmpty,
+               fileManager.isExecutableFile(atPath: output) {
+                appendLog("yt-dlp 已通过 PATH 找到: \(output)")
+                return output
+            } else if let output = String(data: data, encoding: .utf8), !output.isEmpty {
+                appendLog("which yt-dlp 输出: \(output)")
+            }
         } catch {
-            self.currentProcess = nil
-            self.appendLog("检查过程出错: \(error.localizedDescription)")
-            throw error
+            appendLog("通过 PATH 检查 yt-dlp 时出错: \(error.localizedDescription)")
         }
         
-        // 记录输出信息
-        if !output.isEmpty {
-            self.appendLog("检查输出: \(output)")
-        }
-        if !errorOutput.isEmpty {
-            self.appendLog("检查错误: \(errorOutput)")
-        }
-        
-        // 直接检查文件是否存在
-        let fileManager = FileManager.default
-        if fileManager.fileExists(atPath: ytDlpPath) {
-            exists = true
-            self.appendLog("yt-dlp 已找到: \(ytDlpPath)")
-        } else {
-            self.appendLog("yt-dlp 未找到: \(ytDlpPath)")
-        }
-        
-        guard exists else {
-            throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 2, userInfo: [NSLocalizedDescriptionKey: "yt-dlp 未找到，请先安装: brew install yt-dlp"])
-        }
+        throw NSError(
+            domain: "YouTubeSubscriptionsFetcher",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "yt-dlp 未找到，请先安装: brew install yt-dlp"]
+        )
     }
     
     // MARK: - 获取订阅页面内容
-    private func fetchSubscriptionsPage() throws -> String {
+    private func fetchSubscriptionsPage(ytDlpPath: String) throws -> String {
         let semaphore = DispatchSemaphore(value: 0)
         var output: String = ""
         var errorOutput: String = ""
@@ -873,13 +854,12 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         // 保存引用以便取消时使用
         self.currentProcess = process
         
-        // 直接使用绝对路径
-        let ytDlpPath = "/opt/homebrew/bin/yt-dlp"
         process.executableURL = URL(fileURLWithPath: ytDlpPath)
         
-        // 设置环境变量
+        // 设置环境变量，确保两种 Homebrew 路径都在 PATH 中
         var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        let originalPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + originalPath
         environment["HOME"] = NSHomeDirectory()
         process.environment = environment
         

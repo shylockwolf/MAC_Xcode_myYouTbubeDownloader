@@ -369,6 +369,24 @@ struct ContentView: View {
         }
         return nil
     }
+    
+    // MARK: - 解析 yt-dlp 路径
+    private func resolveYtDlpPath() -> String {
+        let fileManager = FileManager.default
+        let candidatePaths = [
+            "/opt/homebrew/bin/yt-dlp",
+            "/usr/local/bin/yt-dlp"
+        ]
+        
+        for path in candidatePaths {
+            if fileManager.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        
+        // 回退到通过 PATH 查找，依赖于下方环境变量中的 PATH
+        return "yt-dlp"
+    }
 
     private func startDownload() {
         isProcessing = true
@@ -433,10 +451,10 @@ struct ContentView: View {
         
         // 获取下载目录
         let downloadsPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory() + "/Downloads"
-        // yt-dlp 的完整路径
-        let ytDlpPath = "/opt/homebrew/bin/yt-dlp"
+        // yt-dlp 的可执行路径（兼容 Intel 与 Apple Silicon）
+        let ytDlpPath = resolveYtDlpPath()
         
-        var command = "\(ytDlpPath) --cookies-from-browser chrome"
+        var command = "\"\(ytDlpPath)\" --cookies-from-browser chrome"
         if convertToMp3 {
             command += " -x --audio-format mp3 --embed-thumbnail"
         }
