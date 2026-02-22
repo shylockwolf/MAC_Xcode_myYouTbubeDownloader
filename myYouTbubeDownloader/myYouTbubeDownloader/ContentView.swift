@@ -269,7 +269,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.2.0")
+                Text("v2.4.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -374,6 +374,7 @@ struct ContentView: View {
     private func resolveYtDlpPath() -> String {
         let fileManager = FileManager.default
         let candidatePaths = [
+            "/Library/Frameworks/Python.framework/Versions/3.13/bin/yt-dlp",
             "/opt/homebrew/bin/yt-dlp",
             "/usr/local/bin/yt-dlp"
         ]
@@ -384,8 +385,25 @@ struct ContentView: View {
             }
         }
         
-        // 回退到通过 PATH 查找，依赖于下方环境变量中的 PATH
         return "yt-dlp"
+    }
+    
+    // MARK: - 处理 URL（解决微博短链接问题）
+    private func processURL(_ url: String) -> String {
+        var processedURL = url
+        
+        if url.contains("weibo.com") || url.contains("t.cn") {
+            if url.contains("passport.weibo.com/visitor") {
+                if let range = url.range(of: "url=", options: .caseInsensitive) {
+                    let encodedURL = String(url[range.upperBound...])
+                    if let decodedURL = encodedURL.removingPercentEncoding {
+                        processedURL = decodedURL
+                    }
+                }
+            }
+        }
+        
+        return processedURL
     }
 
     private func startDownload() {
@@ -444,7 +462,7 @@ struct ContentView: View {
     
     private func processTask(task: (index: Int, url: String), slotIndex: Int) {
         let index = task.index
-        let url = task.url
+        let url = processURL(task.url)
         
         activeSlots[slotIndex] = index
         slotLogs[slotIndex] = [] // 清空该 Slot 的日志
@@ -790,6 +808,7 @@ struct LogSlotCard: View {
                                 .lineSpacing(2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(10)
+                                .textSelection(.enabled)
                                 .id("bottom")
                         }
                     }

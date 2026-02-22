@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features
@@ -80,7 +80,27 @@ Ensure you have the following installed on your Mac:
 
 ## 📝 Version History
 
-### v2.2.0 (Current)
+### v2.4.0 (Current)
+- **New Features**:
+  - Added text selection support for download logs - users can now select and copy log text.
+  - Added Weibo short link support - automatically handles Weibo short links (t.cn) and redirects.
+- **Improved Compatibility**:
+  - Enhanced yt-dlp path detection - now supports both Python pip and Homebrew installations.
+  - Checks multiple installation paths for better compatibility across different setups.
+- **Bug Fixes**:
+  - Fixed URL handling for Weibo videos that redirect through visitor pages.
+
+### v2.2.1
+- **New Features**:
+  - Added text selection support for download logs - users can now select and copy log text.
+  - Added Weibo short link support - automatically handles Weibo short links (t.cn) and redirects.
+- **Improved Compatibility**:
+  - Enhanced yt-dlp path detection - now supports both Python pip and Homebrew installations.
+  - Checks multiple installation paths for better compatibility across different setups.
+- **Bug Fixes**:
+  - Fixed URL handling for Weibo videos that redirect through visitor pages.
+
+### v2.2.0
 - **UI Optimizations**:
   - Redesigned subscription window layout with two-row header.
   - Reduced window widths for better screen utilization.
