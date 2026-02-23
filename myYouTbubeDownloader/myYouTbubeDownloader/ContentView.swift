@@ -269,7 +269,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.4.0")
+                Text("v2.4.1")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -472,7 +472,7 @@ struct ContentView: View {
         // yt-dlp 的可执行路径（兼容 Intel 与 Apple Silicon）
         let ytDlpPath = resolveYtDlpPath()
         
-        var command = "\"\(ytDlpPath)\" --cookies-from-browser chrome"
+        var command = "\"\(ytDlpPath)\" --cookies-from-browser chrome --remote-components ejs:github"
         if convertToMp3 {
             command += " -x --audio-format mp3 --embed-thumbnail"
         }
@@ -509,8 +509,8 @@ struct ContentView: View {
     private func appendLog(slotIndex: Int, message: String) {
         slotLogs[slotIndex].append(message)
         // 限制日志长度
-        if slotLogs[slotIndex].count > 50 {
-            slotLogs[slotIndex].removeFirst(slotLogs[slotIndex].count - 50)
+        if slotLogs[slotIndex].count > 500 {
+            slotLogs[slotIndex].removeFirst(slotLogs[slotIndex].count - 500)
         }
     }
 

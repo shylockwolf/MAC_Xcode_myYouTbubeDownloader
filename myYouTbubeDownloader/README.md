@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.4.1-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features
@@ -80,7 +80,15 @@ Ensure you have the following installed on your Mac:
 
 ## 📝 Version History
 
-### v2.4.0 (Current)
+### v2.4.1 (Current)
+- **Bug Fixes**:
+  - Fixed YouTube download failures caused by JS challenge solving issues.
+  - Added `--remote-components ejs:github` parameter to automatically download challenge solver scripts.
+- **Improvements**:
+  - Increased download log retention from 50 to 500 lines for better history tracking.
+  - Users can now scroll back to view complete download process information.
+
+### v2.4.0
 - **New Features**:
   - Added text selection support for download logs - users can now select and copy log text.
   - Added Weibo short link support - automatically handles Weibo short links (t.cn) and redirects.
