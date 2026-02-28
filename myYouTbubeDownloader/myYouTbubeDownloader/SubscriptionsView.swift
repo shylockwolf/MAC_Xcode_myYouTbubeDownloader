@@ -433,6 +433,15 @@ struct VideoListItem: View {
             
             // 视频信息
             HStack(spacing: 12) {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    Text(video.duration)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                
                 Text(video.channel)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -559,6 +568,16 @@ struct VideoDetailView: View {
                     .foregroundStyle(.secondary)
             }
             
+            // 视频时长
+            HStack(spacing: 8) {
+                Image(systemName: "timer")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Text(video.duration)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            
             // 视频链接
             VStack(alignment: .leading, spacing: 4) {
                 Text("视频链接:")
@@ -669,6 +688,7 @@ struct VideoItem: Identifiable, Equatable {
     let url: String
     let publishTime: String
     let publishDate: Date
+    let duration: String
     var isSelected: Bool = false
     
     static func == (lhs: VideoItem, rhs: VideoItem) -> Bool {
@@ -692,6 +712,18 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
     private var errorHandle: FileHandle?
     
     private init() {}
+    
+    func formatDuration(_ seconds: Int) -> String {
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let secs = seconds % 60
+        
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        } else {
+            return String(format: "%d:%02d", minutes, secs)
+        }
+    }
     
     func appendLog(_ message: String) {
         DispatchQueue.main.async {
@@ -870,7 +902,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
             "--no-warnings",
             "--ignore-errors",
             "--format", "worst",
-            "--playlist-items", "1:20",
+            "--playlist-items", "1:10",
             "https://www.youtube.com/feed/subscriptions"
         ]
         process.standardOutput = outputPipe
@@ -923,16 +955,16 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         do {
             try process.run()
             
-            // 设置超时时间为180秒（3分钟）
-            let timeoutResult = semaphore.wait(timeout: .now() + 180)
+            // 设置超时时间为300秒（5分钟）
+            let timeoutResult = semaphore.wait(timeout: .now() + 300)
             
             if timeoutResult == .timedOut {
                 if process.isRunning {
-                    self.appendLog("命令执行超时（180秒），强制终止...")
+                    self.appendLog("命令执行超时（300秒），强制终止...")
                     process.terminate()
                 }
                 self.currentProcess = nil
-                throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 3, userInfo: [NSLocalizedDescriptionKey: "命令执行超时，请检查网络连接或cookie是否有效"])
+                throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 3, userInfo: [NSLocalizedDescriptionKey: "命令执行超时（超过5分钟），可能原因：\n1. 网络连接较慢\n2. YouTube服务器响应慢\n3. Cookie已失效\n\n建议：\n- 检查网络连接\n- 重新登录YouTube\n- 关闭所有Chrome窗口后重试"])
             }
             
             self.currentProcess = nil
@@ -1013,12 +1045,23 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                         publishTime = "未知时间"
                     }
                     
+                    // 获取视频时长（秒）
+                    let duration: String
+                    if let durationSeconds = videoJSON["duration"] as? Int {
+                        duration = formatDuration(durationSeconds)
+                    } else if let durationSeconds = videoJSON["duration"] as? Double {
+                        duration = formatDuration(Int(durationSeconds))
+                    } else {
+                        duration = "未知时长"
+                    }
+                    
                     videos.append(VideoItem(
                         title: title,
                         channel: channel,
                         url: url,
                         publishTime: publishTime,
-                        publishDate: publishDate
+                        publishDate: publishDate,
+                        duration: duration
                     ))
                 }
             } catch {

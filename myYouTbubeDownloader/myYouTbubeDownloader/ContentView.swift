@@ -269,7 +269,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.4.1")
+                Text("v2.4.2")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -517,6 +517,9 @@ struct ContentView: View {
     private func executeCommand(command: String, workingDirectory: String, slotIndex: Int, completion: @escaping (Bool) -> Void) {
         let task = Process()
         let pipe = Pipe()
+        
+        let semaphore = DispatchSemaphore(value: 0)
+        var hasCompleted = false
 
         task.executableURL = URL(fileURLWithPath: "/bin/bash")
         // 设置环境变量
@@ -548,16 +551,43 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 // 关闭文件句柄，防止内存泄漏或资源占用
                 handle.readabilityHandler = nil
-                completion(process.terminationStatus == 0)
+                if !hasCompleted {
+                    hasCompleted = true
+                    semaphore.signal()
+                    completion(process.terminationStatus == 0)
+                }
             }
         }
 
         do {
             try task.run()
+            
+            // 设置超时时间为600秒（10分钟）
+            DispatchQueue.global(qos: .userInitiated).async {
+                let timeoutResult = semaphore.wait(timeout: .now() + 600)
+                
+                if timeoutResult == .timedOut && !hasCompleted {
+                    DispatchQueue.main.async {
+                        if task.isRunning {
+                            self.appendLog(slotIndex: slotIndex, message: "下载超时（10分钟），强制终止...")
+                            task.terminate()
+                        }
+                        if !hasCompleted {
+                            hasCompleted = true
+                            self.downloadTasks[slotIndex] = nil
+                            self.activeSlots[slotIndex] = nil
+                            completion(false)
+                        }
+                    }
+                }
+            }
         } catch {
             DispatchQueue.main.async {
                 self.appendLog(slotIndex: slotIndex, message: "错误: \(error.localizedDescription)")
-                completion(false)
+                if !hasCompleted {
+                    hasCompleted = true
+                    completion(false)
+                }
             }
         }
     }
