@@ -472,7 +472,7 @@ struct ContentView: View {
         // yt-dlp 的可执行路径（兼容 Intel 与 Apple Silicon）
         let ytDlpPath = resolveYtDlpPath()
         
-        var command = "\"\(ytDlpPath)\" --cookies-from-browser chrome --remote-components ejs:github"
+        var command = "\"\(ytDlpPath)\" --extractor-args \"youtube:player_client=android\""
         if convertToMp3 {
             command += " -x --audio-format mp3 --embed-thumbnail"
         }

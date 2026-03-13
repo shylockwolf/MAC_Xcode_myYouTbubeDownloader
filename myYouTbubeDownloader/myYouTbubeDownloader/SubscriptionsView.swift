@@ -897,12 +897,12 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         process.arguments = [
             "--cookies-from-browser", "chrome",
+            "--flat-playlist",
             "--dump-json",
             "--skip-download",
             "--no-warnings",
             "--ignore-errors",
-            "--format", "worst",
-            "--playlist-items", "1:10",
+            "--playlist-items", "1:21",
             "https://www.youtube.com/feed/subscriptions"
         ]
         process.standardOutput = outputPipe
@@ -1012,6 +1012,9 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         self.appendLog("开始解析 \(lines.count) 行数据...")
         
+        // 使用Set去重，避免同一视频的多个格式被重复添加
+        var processedIDs = Set<String>()
+        
         for (_, line) in lines.enumerated() where !line.isEmpty {
             if self.cancellationToken { break }
             
@@ -1021,14 +1024,23 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                 
                 guard let videoJSON = json else { continue }
                 
+                // 获取视频ID用于去重
+                guard let videoID = videoJSON["id"] as? String else { continue }
+                
+                // 如果已经处理过这个视频，跳过
+                if processedIDs.contains(videoID) { continue }
+                
                 // 提取视频信息 - 适应flat-playlist格式
                 if let title = videoJSON["title"] as? String,
                    let url = videoJSON["webpage_url"] as? String ?? videoJSON["url"] as? String {
                     
-                    // 获取频道名称（可能不存在）
+                    // 标记为已处理
+                    processedIDs.insert(videoID)
+                    
+                    // 获取频道名称（flat-playlist格式可能没有uploader字段）
                     let channel = videoJSON["uploader"] as? String ?? videoJSON["channel"] as? String ?? "未知频道"
                     
-                    // 获取时间戳
+                    // 获取时间戳（flat-playlist格式通常没有timestamp）
                     let timestamp = videoJSON["timestamp"] as? TimeInterval
                     let publishDate: Date
                     let publishTime: String
@@ -1040,9 +1052,9 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                         formatter.timeStyle = .short
                         publishTime = formatter.string(from: publishDate)
                     } else {
-                        // 如果没有时间戳，尝试解析其他可能的日期字段
+                        // flat-playlist格式通常没有时间戳，使用当前时间作为占位
                         publishDate = Date()
-                        publishTime = "未知时间"
+                        publishTime = "刚刚"
                     }
                     
                     // 获取视频时长（秒）
@@ -1070,7 +1082,143 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         }
         
         self.appendLog("成功解析出 \(videos.count) 个视频")
-        return videos
+        
+        // 获取每个视频的详细信息（频道名称等）
+        var enrichedVideos: [VideoItem] = []
+        for (index, video) in videos.enumerated() {
+            if self.cancellationToken { break }
+            
+            self.appendLog("正在获取视频 \(index + 1)/\(videos.count) 的详细信息...")
+            
+            if let detailedVideo = try? self.fetchVideoDetails(video: video, ytDlpPath: "/opt/homebrew/bin/yt-dlp") {
+                enrichedVideos.append(detailedVideo)
+            } else {
+                // 如果获取详情失败，使用原始信息
+                enrichedVideos.append(video)
+            }
+        }
+        
+        return enrichedVideos
+    }
+    
+    // MARK: - 获取单个视频详情
+    private func fetchVideoDetails(video: VideoItem, ytDlpPath: String) throws -> VideoItem {
+        let semaphore = DispatchSemaphore(value: 0)
+        var output: String = ""
+        var errorOutput: String = ""
+        var terminationStatus: Int32 = -1
+        
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        
+        process.executableURL = URL(fileURLWithPath: ytDlpPath)
+        
+        var environment = ProcessInfo.processInfo.environment
+        let originalPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + originalPath
+        environment["HOME"] = NSHomeDirectory()
+        process.environment = environment
+        
+        process.arguments = [
+            "--extractor-args", "youtube:player_client=android",
+            "--dump-json",
+            "--skip-download",
+            "--no-warnings",
+            "--ignore-errors",
+            "--playlist-items", "1",
+            video.url
+        ]
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        
+        let outputHandle = outputPipe.fileHandleForReading
+        outputHandle.readabilityHandler = { [weak self] fileHandle in
+            guard let self = self, !self.cancellationToken else { return }
+            let data = fileHandle.availableData
+            if data.isEmpty { return }
+            if let string = String(data: data, encoding: .utf8) {
+                output += string
+            }
+        }
+        
+        let errorHandle = errorPipe.fileHandleForReading
+        errorHandle.readabilityHandler = { [weak self] fileHandle in
+            guard let self = self, !self.cancellationToken else { return }
+            let data = fileHandle.availableData
+            if data.isEmpty { return }
+            if let string = String(data: data, encoding: .utf8) {
+                errorOutput += string
+            }
+        }
+        
+        process.terminationHandler = { process in
+            terminationStatus = process.terminationStatus
+            semaphore.signal()
+        }
+        
+        do {
+            try process.run()
+            let timeoutResult = semaphore.wait(timeout: .now() + 30)
+            
+            if timeoutResult == .timedOut {
+                if process.isRunning {
+                    process.terminate()
+                }
+                throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 4, userInfo: [NSLocalizedDescriptionKey: "获取视频详情超时"])
+            }
+        } catch {
+            throw error
+        }
+        
+        // 清理文件句柄
+        outputHandle.readabilityHandler = nil
+        errorHandle.readabilityHandler = nil
+        
+        guard !output.isEmpty,
+              let firstLine = output.components(separatedBy: .newlines).first,
+              let data = firstLine.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+            return video
+        }
+        
+        // 提取详细信息
+        let channel = json["uploader"] as? String ?? json["channel"] as? String ?? video.channel
+        
+        // 获取时间戳
+        let timestamp = json["timestamp"] as? TimeInterval
+        let publishDate: Date
+        let publishTime: String
+        
+        if let ts = timestamp {
+            publishDate = Date(timeIntervalSince1970: ts)
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            publishTime = formatter.string(from: publishDate)
+        } else {
+            publishDate = video.publishDate
+            publishTime = video.publishTime
+        }
+        
+        // 获取视频时长
+        let duration: String
+        if let durationSeconds = json["duration"] as? Int {
+            duration = formatDuration(durationSeconds)
+        } else if let durationSeconds = json["duration"] as? Double {
+            duration = formatDuration(Int(durationSeconds))
+        } else {
+            duration = video.duration
+        }
+        
+        return VideoItem(
+            title: video.title,
+            channel: channel,
+            url: video.url,
+            publishTime: publishTime,
+            publishDate: publishDate,
+            duration: duration
+        )
     }
 }
 
