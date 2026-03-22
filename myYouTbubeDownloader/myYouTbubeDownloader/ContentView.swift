@@ -269,7 +269,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.4.2")
+                Text("v2.4.4")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -389,23 +389,138 @@ struct ContentView: View {
     }
     
     // MARK: - 处理 URL（解决微博短链接问题）
-    private func processURL(_ url: String) -> String {
-        var processedURL = url
+    private func processURL(_ url: String, logSlot: Int) -> String {
+        var processedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        if url.contains("weibo.com") || url.contains("t.cn") {
-            if url.contains("passport.weibo.com/visitor") {
-                if let range = url.range(of: "url=", options: .caseInsensitive) {
-                    let encodedURL = String(url[range.upperBound...])
-                    if let decodedURL = encodedURL.removingPercentEncoding {
-                        processedURL = decodedURL
+        // 先处理 passport.weibo.com 登录跳转链接
+        if processedURL.contains("passport.weibo.com/visitor") {
+            appendLog(slotIndex: logSlot, message: "[URL处理] 检测到 passport 链接，正在提取...")
+            if let extracted = extractURLFromWeiboPassport(processedURL) {
+                processedURL = extracted
+                appendLog(slotIndex: logSlot, message: "[URL处理] 提取结果: \(extracted)")
+            }
+        }
+        // 处理 t.cn 短链接
+        else if processedURL.contains("t.cn") {
+            appendLog(slotIndex: logSlot, message: "[URL处理] 检测到 t.cn 短链接，正在展开...")
+            if let expandedURL = expandShortURL(processedURL, logSlot: logSlot) {
+                processedURL = expandedURL
+                appendLog(slotIndex: logSlot, message: "[URL处理] 展开结果: \(expandedURL)")
+                
+                // 如果展开后是 passport.weibo.com，再次提取
+                if processedURL.contains("passport.weibo.com/visitor") {
+                    appendLog(slotIndex: logSlot, message: "[URL处理] 展开后仍是 passport，再次提取...")
+                    if let extracted = extractURLFromWeiboPassport(processedURL) {
+                        processedURL = extracted
+                        appendLog(slotIndex: logSlot, message: "[URL处理] 最终提取: \(extracted)")
                     }
                 }
+            } else {
+                appendLog(slotIndex: logSlot, message: "[URL处理] ⚠️ 短链接展开失败，使用原始URL")
             }
         }
         
         return processedURL
     }
-
+    
+    // MARK: - 展开短链接（带浏览器 User-Agent）
+    private func expandShortURL(_ shortURL: String, logSlot: Int) -> String? {
+        appendLog(slotIndex: logSlot, message: "[短链接展开] 开始处理: \(shortURL)")
+        
+        guard let url = URL(string: shortURL) else {
+            appendLog(slotIndex: logSlot, message: "[短链接展开] ❌ 无效的URL")
+            return nil
+        }
+        
+        let semaphore = DispatchSemaphore(value: 0)
+        var finalURL: String?
+        var redirectChain: [String] = [shortURL]
+        
+        // 配置 URLSession，使用浏览器 User-Agent
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 20
+        config.httpShouldSetCookies = true
+        config.httpCookieAcceptPolicy = .always
+        
+        let delegate = ShortURLRedirectDelegate(redirectChain: redirectChain)
+        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+        request.httpMethod = "GET"
+        
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("[短链接展开] 网络错误: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.appendLog(slotIndex: logSlot, message: "[短链接展开] ❌ 网络错误: \(error.localizedDescription)")
+                }
+            } else if let httpResponse = response as? HTTPURLResponse {
+                print("[短链接展开] 状态码: \(httpResponse.statusCode)")
+                DispatchQueue.main.async {
+                    self.appendLog(slotIndex: logSlot, message: "[短链接展开] 状态码: \(httpResponse.statusCode)")
+                    self.appendLog(slotIndex: logSlot, message: "[短链接展开] 重定向链: \(delegate.redirectChain)")
+                }
+                
+                // 获取最终 URL
+                if let lastURL = delegate.redirectChain.last {
+                    finalURL = lastURL
+                } else if let location = httpResponse.url?.absoluteString {
+                    finalURL = location
+                }
+            }
+            semaphore.signal()
+        }
+        
+        task.resume()
+        let result = semaphore.wait(timeout: .now() + 20)
+        
+        if result == .timedOut {
+            appendLog(slotIndex: logSlot, message: "[短链接展开] ❌ 超时")
+            task.cancel()
+            return nil
+        }
+        
+        // 如果最终URL是 passport.weibo.com，从中提取实际URL
+        if let url = finalURL, url.contains("passport.weibo.com") {
+            appendLog(slotIndex: logSlot, message: "[短链接展开] 检测到 passport URL，提取中...")
+            if let extracted = extractURLFromWeiboPassport(url) {
+                appendLog(slotIndex: logSlot, message: "[短链接展开] ✅ 提取成功: \(extracted)")
+                return extracted
+            } else {
+                appendLog(slotIndex: logSlot, message: "[短链接展开] ❌ 提取失败")
+            }
+        } else if let url = finalURL {
+            appendLog(slotIndex: logSlot, message: "[短链接展开] ✅ 最终URL: \(url)")
+        }
+        
+        return finalURL
+    }
+    
+    // MARK: - 从微博 passport URL 提取实际URL
+    private func extractURLFromWeiboPassport(_ passportURL: String) -> String? {
+        // 直接用字符串操作查找 url= 参数（避免 URLComponents 把 url 值内部的 & 当作参数分隔符）
+        guard let range = passportURL.range(of: "url=", options: .caseInsensitive) else {
+            print("[passport提取] 未找到 url= 参数")
+            return nil
+        }
+        
+        // 提取 url= 后面的内容到字符串结尾
+        let encodedURL = String(passportURL[range.upperBound...])
+        
+        // URL 解码
+        if let decodedURL = encodedURL.removingPercentEncoding {
+            print("[passport提取] 解码后: \(decodedURL)")
+            return decodedURL
+        }
+        
+        // 如果解码失败，直接返回原始值
+        return encodedURL.isEmpty ? nil : encodedURL
+    }
+    
     private func startDownload() {
         isProcessing = true
         completedTasks.removeAll()
@@ -462,10 +577,21 @@ struct ContentView: View {
     
     private func processTask(task: (index: Int, url: String), slotIndex: Int) {
         let index = task.index
-        let url = processURL(task.url)
+        let originalURL = task.url
         
+        // 先清空日志
+        slotLogs[slotIndex] = []
         activeSlots[slotIndex] = index
-        slotLogs[slotIndex] = [] // 清空该 Slot 的日志
+        
+        // 处理 URL
+        appendLog(slotIndex: slotIndex, message: "[URL处理] 开始处理...")
+        let processedURL = processURL(originalURL, logSlot: slotIndex)
+        
+        // 记录URL处理过程
+        appendLog(slotIndex: slotIndex, message: "[URL处理] 原始URL: \(originalURL)")
+        appendLog(slotIndex: slotIndex, message: "[URL处理] 处理后: \(processedURL)")
+        
+        let url = processedURL
         
         // 获取下载目录
         let downloadsPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory() + "/Downloads"
@@ -915,4 +1041,34 @@ struct DownloadRecordsCard: View {
 #Preview {
     ContentView()
         .frame(width: 1100, height: 680)
+}
+
+// MARK: - 短链接重定向代理
+class ShortURLRedirectDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
+    var redirectChain: [String]
+    
+    init(redirectChain: [String]) {
+        self.redirectChain = redirectChain
+    }
+    
+    // 禁用 SSL 证书验证
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+            if let trust = challenge.protectionSpace.serverTrust {
+                completionHandler(.useCredential, URLCredential(trust: trust))
+                return
+            }
+        }
+        completionHandler(.performDefaultHandling, nil)
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        // 记录重定向URL
+        if let redirectURL = request.url?.absoluteString {
+            redirectChain.append(redirectURL)
+            print("[重定向] -> \(redirectURL)")
+        }
+        // 继续跟随重定向
+        completionHandler(request)
+    }
 }

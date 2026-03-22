@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleShortVersionString</key>
-	<string>2.4.2</string>
+	<string>2.4.4</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSAppleEventsUsageDescription</key>
@@ -18,5 +18,10 @@
 	<false/>
 	<key>NSDisablePersistentTerminalLogging</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

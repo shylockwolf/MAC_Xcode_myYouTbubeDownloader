@@ -790,6 +790,16 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                     
                     // 过滤出指定时间内的视频
                     let timeAgo = Date().addingTimeInterval(-Double(hours) * 60 * 60)
+                    let formatter = DateFormatter()
+                    formatter.dateStyle = .medium
+                    formatter.timeStyle = .short
+                    self.appendLog("过滤时间范围: \(formatter.string(from: timeAgo)) 之后")
+                    
+                    for video in videos {
+                        let isInTimeRange = video.publishDate >= timeAgo
+                        self.appendLog("视频: \(video.title.prefix(20))... - 发布时间: \(formatter.string(from: video.publishDate)) - \(isInTimeRange ? "✓符合" : "✗超时")")
+                    }
+                    
                     let recentVideos = videos.filter { $0.publishDate >= timeAgo }
                     
                     // 按发布时间排序（最新的在前）
@@ -1052,9 +1062,9 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                         formatter.timeStyle = .short
                         publishTime = formatter.string(from: publishDate)
                     } else {
-                        // flat-playlist格式通常没有时间戳，使用当前时间作为占位
+                        // flat-playlist格式通常没有时间戳，先使用当前时间，稍后会获取详细信息
                         publishDate = Date()
-                        publishTime = "刚刚"
+                        publishTime = "获取中..."
                     }
                     
                     // 获取视频时长（秒）
@@ -1121,7 +1131,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         process.environment = environment
         
         process.arguments = [
-            "--extractor-args", "youtube:player_client=android",
+            "--extractor-args", "youtube:player_client=web",
             "--dump-json",
             "--skip-download",
             "--no-warnings",
@@ -1185,21 +1195,129 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         // 提取详细信息
         let channel = json["uploader"] as? String ?? json["channel"] as? String ?? video.channel
         
-        // 获取时间戳
-        let timestamp = json["timestamp"] as? TimeInterval
-        let publishDate: Date
+        // 调试：输出时间相关字段
+        self.appendLog("  视频标题: \(video.title.prefix(30))...")
+        
+        // 输出完整的时间相关字段
+        self.appendLog("  [时间字段] timestamp: \(json["timestamp"] ?? "无")")
+        self.appendLog("  [时间字段] release_timestamp: \(json["release_timestamp"] ?? "无")")
+        self.appendLog("  [时间字段] upload_date: \(json["upload_date"] ?? "无")")
+        self.appendLog("  [时间字段] release_date: \(json["release_date"] ?? "无")")
+        
+        // 尝试其他可能的时间字段
+        let otherTimeFields = ["published_timestamp", "created_timestamp", "modified_timestamp", "published", "availability", 
+                               "epoch", "filetime", "date", "datetime", "publishedTime", "upload_date_precision"]
+        for field in otherTimeFields {
+            if let value = json[field] {
+                self.appendLog("  [时间字段] \(field): \(value)")
+            }
+        }
+        
+        // 尝试解析 ISO 8601 格式的时间字符串
+        if let published = json["published"] as? String {
+            self.appendLog("  [调试] published 字符串: \(published)")
+            let isoFormatter = ISO8601DateFormatter()
+            if let date = isoFormatter.date(from: published) {
+                self.appendLog("  [调试] ISO 8601 解析成功: \(date)")
+            }
+        }
+        
+        // 尝试多种方式获取发布时间
+        var publishDate: Date
         let publishTime: String
         
-        if let ts = timestamp {
+        // 1. 尝试 timestamp (Unix timestamp)
+        if let ts = json["timestamp"] as? TimeInterval {
             publishDate = Date(timeIntervalSince1970: ts)
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .short
-            publishTime = formatter.string(from: publishDate)
-        } else {
-            publishDate = video.publishDate
-            publishTime = video.publishTime
         }
+        // 2. 尝试 release_timestamp
+        else if let ts = json["release_timestamp"] as? TimeInterval {
+            publishDate = Date(timeIntervalSince1970: ts)
+        }
+        // 2.5. 尝试 epoch (Unix timestamp in milliseconds or seconds)
+        else if let epoch = json["epoch"] as? TimeInterval {
+            // epoch 可能是毫秒或秒，需要判断
+            if epoch > 1000000000000 {
+                // 毫秒，转换为秒
+                publishDate = Date(timeIntervalSince1970: epoch / 1000)
+            } else {
+                publishDate = Date(timeIntervalSince1970: epoch)
+            }
+        }
+        // 2.6. 尝试解析 ISO 8601 格式的时间字符串
+        else if let published = json["published"] as? String {
+            let isoFormatter = ISO8601DateFormatter()
+            if let date = isoFormatter.date(from: published) {
+                publishDate = date
+            } else {
+                // 尝试其他日期格式
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+                if let date = dateFormatter.date(from: published) {
+                    publishDate = date
+                } else {
+                    publishDate = video.publishDate
+                }
+            }
+        }
+        // 3. 尝试 upload_date (格式: YYYYMMDD)
+        else if let uploadDateStr = json["upload_date"] as? String,
+                uploadDateStr.count == 8 {
+            let year = Int(uploadDateStr[..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 4)])!
+            let month = Int(uploadDateStr[uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 4)..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 6)])!
+            let day = Int(uploadDateStr[uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 6)..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 8)])!
+            
+            var components = DateComponents()
+            components.year = year
+            components.month = month
+            components.day = day
+            // 使用中午12:00作为默认时间，比00:00更合理
+            components.hour = 12
+            components.minute = 0
+            components.second = 0
+            
+            publishDate = Calendar.current.date(from: components) ?? video.publishDate
+            self.appendLog("  [调试] upload_date 解析结果: \(year)-\(month)-\(day)")
+        }
+        // 4. 尝试 release_date (格式: YYYYMMDD)
+        else if let releaseDateStr = json["release_date"] as? String,
+                releaseDateStr.count == 8 {
+            let year = Int(releaseDateStr[..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 4)])!
+            let month = Int(releaseDateStr[releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 4)..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 6)])!
+            let day = Int(releaseDateStr[releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 6)..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 8)])!
+            
+            var components = DateComponents()
+            components.year = year
+            components.month = month
+            components.day = day
+            // 使用中午12:00作为默认时间，比00:00更合理
+            components.hour = 12
+            components.minute = 0
+            components.second = 0
+            
+            publishDate = Calendar.current.date(from: components) ?? video.publishDate
+        }
+        // 5. 使用原始时间作为后备
+        else {
+            publishDate = video.publishDate
+        }
+        
+        // 格式化显示时间
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        
+        // 安全检查：如果日期在未来，使用当前时间
+        let now = Date()
+        if publishDate > now {
+            self.appendLog("  [警告] 解析的日期在未来(\(formatter.string(from: publishDate)))，使用当前时间")
+            publishDate = now
+        }
+        
+        publishTime = formatter.string(from: publishDate)
+        
+        // 调试：输出最终解析的时间
+        self.appendLog("  最终发布时间: \(publishTime)")
         
         // 获取视频时长
         let duration: String
