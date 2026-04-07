@@ -269,7 +269,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.4.4")
+                Text("v2.4.5")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -688,14 +688,14 @@ struct ContentView: View {
         do {
             try task.run()
             
-            // 设置超时时间为600秒（10分钟）
+            // 设置超时时间为3600秒（60分钟）
             DispatchQueue.global(qos: .userInitiated).async {
-                let timeoutResult = semaphore.wait(timeout: .now() + 600)
+                let timeoutResult = semaphore.wait(timeout: .now() + 3600)
                 
                 if timeoutResult == .timedOut && !hasCompleted {
                     DispatchQueue.main.async {
                         if task.isRunning {
-                            self.appendLog(slotIndex: slotIndex, message: "下载超时（10分钟），强制终止...")
+                            self.appendLog(slotIndex: slotIndex, message: "下载超时（60分钟），强制终止...")
                             task.terminate()
                         }
                         if !hasCompleted {

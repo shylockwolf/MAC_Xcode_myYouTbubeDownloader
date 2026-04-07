@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.4.4-blue.svg)
+![Version](https://img.shields.io/badge/version-2.4.5-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features
@@ -172,7 +172,13 @@ Key Components:
 
 ## 📝 Version History
 
-### v2.4.4 (Current)
+### v2.4.5 (Current)
+- **Performance Improvements**:
+  - Increased video download timeout from 10 minutes to 60 minutes for better handling of large or slow downloads.
+- **User Experience**:
+  - Improved timeout error messages to reflect the new 60-minute limit.
+
+### v2.4.4
 - **Weibo Short Link Support**:
   - Added automatic expansion of Weibo short links (t.cn) to full video URLs.
   - Automatically extracts actual video URLs from Weibo passport redirect pages.
