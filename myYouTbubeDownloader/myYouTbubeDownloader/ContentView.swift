@@ -50,6 +50,11 @@ struct ContentView: View {
                 addURLToFirstEmptySlot(url: url)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .startDownloadFromSubscriptions)) { _ in
+            // 关闭订阅窗口并开始下载
+            subscriptionsController?.closeWindow()
+            startDownload()
+        }
         .overlay(
             Group {
                 if showAddURLMessage, let message = addURLMessage {
@@ -269,7 +274,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.4.5")
+                Text("v2.4.7")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -434,7 +439,7 @@ struct ContentView: View {
         
         let semaphore = DispatchSemaphore(value: 0)
         var finalURL: String?
-        var redirectChain: [String] = [shortURL]
+        let redirectChain: [String] = [shortURL]
         
         // 配置 URLSession，使用浏览器 User-Agent
         let config = URLSessionConfiguration.default
@@ -776,6 +781,10 @@ class SubscriptionsWindowController: NSObject, NSWindowDelegate {
         self.window = newWindow
         newWindow.makeKeyAndOrderFront(nil)
         newWindow.center()
+    }
+    
+    func closeWindow() {
+        window?.close()
     }
     
     func windowWillClose(_ notification: Notification) {

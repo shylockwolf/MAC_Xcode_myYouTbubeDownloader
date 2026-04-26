@@ -172,7 +172,19 @@ Key Components:
 
 ## 📝 Version History
 
-### v2.4.5 (Current)
+### v2.4.7 (Current)
+- **Build Fix**:
+  - Fixed Xcode warning: Info.plist no longer included in Copy Bundle Resources build phase.
+  - Added PBXFileSystemSynchronizedBuildFileExceptionSet to properly exclude Info.plist from bundle resources.
+
+### v2.4.6
+- **Performance Improvements**:
+  - Batch video detail fetching for subscriptions - all URLs processed in a single yt-dlp call instead of one-by-one.
+- **New Features**:
+  - Added yellow "开始下载" (Start Download) button in YouTube subscriptions page.
+  - Clicking the button closes the subscription window and triggers the main page download.
+
+### v2.4.5
 - **Performance Improvements**:
   - Increased video download timeout from 10 minutes to 60 minutes for better handling of large or slow downloads.
 - **User Experience**:

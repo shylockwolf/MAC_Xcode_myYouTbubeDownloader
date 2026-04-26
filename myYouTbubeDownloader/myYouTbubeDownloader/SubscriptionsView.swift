@@ -13,6 +13,7 @@ import Combine
 extension Notification.Name {
     static let addURLToDownload = Notification.Name("addURLToDownload")
     static let addURLResult = Notification.Name("addURLResult")
+    static let startDownloadFromSubscriptions = Notification.Name("startDownloadFromSubscriptions")
 }
 
 struct SubscriptionsView: View {
@@ -293,6 +294,23 @@ struct SubscriptionsView: View {
                 .controlSize(.small)
                 .disabled(videos.isEmpty)
             }
+            
+            // 开始下载按钮
+            Button(action: startDownloadFromSubscriptions) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 14))
+                    Text("开始下载")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
+                .background(Color.yellow)
+                .foregroundColor(.black)
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+            .disabled(videos.isEmpty)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -331,6 +349,12 @@ struct SubscriptionsView: View {
                 videos = fetchedVideos
             })
             .store(in: &cancellables)
+    }
+    
+    // MARK: - 从订阅页面开始下载
+    private func startDownloadFromSubscriptions() {
+        // 发送通知，主窗口接收后关闭订阅窗口并开始下载
+        NotificationCenter.default.post(name: .startDownloadFromSubscriptions, object: nil)
     }
     
     // MARK: - 日期格式化
@@ -1164,7 +1188,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
             }
         }
         
-        process.terminationHandler = { [weak self] proc in
+        process.terminationHandler = { proc in
             terminationStatus = proc.terminationStatus
             semaphore.signal()
         }
