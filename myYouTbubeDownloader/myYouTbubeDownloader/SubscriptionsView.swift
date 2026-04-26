@@ -1093,26 +1093,18 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         self.appendLog("成功解析出 \(videos.count) 个视频")
         
-        // 获取每个视频的详细信息（频道名称等）
-        var enrichedVideos: [VideoItem] = []
-        for (index, video) in videos.enumerated() {
-            if self.cancellationToken { break }
-            
-            self.appendLog("正在获取视频 \(index + 1)/\(videos.count) 的详细信息...")
-            
-            if let detailedVideo = try? self.fetchVideoDetails(video: video, ytDlpPath: "/opt/homebrew/bin/yt-dlp") {
-                enrichedVideos.append(detailedVideo)
-            } else {
-                // 如果获取详情失败，使用原始信息
-                enrichedVideos.append(video)
-            }
-        }
+        // 批量获取所有视频的详细信息（一次调用 yt-dlp）
+        let enrichedVideos = self.batchFetchVideoDetails(videos: videos, ytDlpPath: "/opt/homebrew/bin/yt-dlp")
         
         return enrichedVideos
     }
     
-    // MARK: - 获取单个视频详情
-    private func fetchVideoDetails(video: VideoItem, ytDlpPath: String) throws -> VideoItem {
+    // MARK: - 批量获取视频详情
+    private func batchFetchVideoDetails(videos: [VideoItem], ytDlpPath: String) -> [VideoItem] {
+        if videos.isEmpty { return videos }
+        
+        self.appendLog("批量获取 \(videos.count) 个视频的详细信息...")
+        
         let semaphore = DispatchSemaphore(value: 0)
         var output: String = ""
         var errorOutput: String = ""
@@ -1130,19 +1122,27 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         environment["HOME"] = NSHomeDirectory()
         process.environment = environment
         
-        process.arguments = [
+        // 构建参数：所有视频 URL 一次性传入
+        var arguments = [
             "--extractor-args", "youtube:player_client=web",
             "--dump-json",
             "--skip-download",
             "--no-warnings",
             "--ignore-errors",
-            "--playlist-items", "1",
-            video.url
+            "--playlist-items", "1"
         ]
+        for video in videos {
+            arguments.append(video.url)
+        }
+        process.arguments = arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         
+        // 保存引用以便取消
+        self.currentProcess = process
+        
         let outputHandle = outputPipe.fileHandleForReading
+        self.outputHandle = outputHandle
         outputHandle.readabilityHandler = { [weak self] fileHandle in
             guard let self = self, !self.cancellationToken else { return }
             let data = fileHandle.availableData
@@ -1153,173 +1153,152 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         }
         
         let errorHandle = errorPipe.fileHandleForReading
+        self.errorHandle = errorHandle
         errorHandle.readabilityHandler = { [weak self] fileHandle in
             guard let self = self, !self.cancellationToken else { return }
             let data = fileHandle.availableData
             if data.isEmpty { return }
             if let string = String(data: data, encoding: .utf8) {
                 errorOutput += string
+                self.appendLog("[详情] \(string.prefix(200))\(string.count > 200 ? "..." : "")")
             }
         }
         
-        process.terminationHandler = { process in
-            terminationStatus = process.terminationStatus
+        process.terminationHandler = { [weak self] proc in
+            terminationStatus = proc.terminationStatus
             semaphore.signal()
         }
         
         do {
             try process.run()
-            let timeoutResult = semaphore.wait(timeout: .now() + 30)
+            
+            // 批量获取超时：每个视频30秒 + 基础30秒
+            let timeout = Double(videos.count * 30 + 30)
+            let timeoutResult = semaphore.wait(timeout: .now() + timeout)
             
             if timeoutResult == .timedOut {
                 if process.isRunning {
+                    self.appendLog("批量获取详情超时，强制终止...")
                     process.terminate()
                 }
-                throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 4, userInfo: [NSLocalizedDescriptionKey: "获取视频详情超时"])
+                self.currentProcess = nil
+            } else {
+                self.currentProcess = nil
+                self.appendLog("批量详情获取完成，退出状态: \(terminationStatus)")
             }
         } catch {
-            throw error
+            self.currentProcess = nil
+            self.appendLog("批量获取详情失败: \(error.localizedDescription)")
         }
         
         // 清理文件句柄
-        outputHandle.readabilityHandler = nil
-        errorHandle.readabilityHandler = nil
-        
-        guard !output.isEmpty,
-              let firstLine = output.components(separatedBy: .newlines).first,
-              let data = firstLine.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-            return video
+        DispatchQueue.main.async { [weak self] in
+            outputHandle.readabilityHandler = nil
+            errorHandle.readabilityHandler = nil
+            self?.outputHandle = nil
+            self?.errorHandle = nil
         }
         
-        // 提取详细信息
+        if self.cancellationToken { return videos }
+        
+        // 解析批量输出：每行一个视频的 JSON
+        var detailMap: [String: [String: Any]] = [:]
+        let lines = output.components(separatedBy: .newlines)
+        
+        for line in lines where !line.isEmpty {
+            guard let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                  let videoID = json["id"] as? String else { continue }
+            detailMap[videoID] = json
+        }
+        
+        self.appendLog("成功解析 \(detailMap.count)/\(videos.count) 个视频详情")
+        
+        // 合并详情到视频列表
+        var enrichedVideos: [VideoItem] = []
+        for video in videos {
+            if let json = detailMap[video.url.contains("watch") ? 
+                (video.url.components(separatedBy: "v=").last ?? video.url) : video.url] {
+                enrichedVideos.append(applyVideoDetails(video: video, json: json))
+            } else {
+                // 尝试通过 URL 中的 ID 匹配
+                let matched = detailMap.values.first { detailJson in
+                    if let detailUrl = detailJson["webpage_url"] as? String {
+                        return detailUrl == video.url
+                    }
+                    if let detailId = detailJson["id"] as? String {
+                        return video.url.contains(detailId)
+                    }
+                    return false
+                }
+                if let matched = matched {
+                    enrichedVideos.append(applyVideoDetails(video: video, json: matched))
+                } else {
+                    // 无详情，使用原始信息
+                    enrichedVideos.append(video)
+                }
+            }
+        }
+        
+        return enrichedVideos
+    }
+    
+    // MARK: - 将 JSON 详情应用到 VideoItem
+    private func applyVideoDetails(video: VideoItem, json: [String: Any]) -> VideoItem {
         let channel = json["uploader"] as? String ?? json["channel"] as? String ?? video.channel
         
-        // 调试：输出时间相关字段
-        self.appendLog("  视频标题: \(video.title.prefix(30))...")
-        
-        // 输出完整的时间相关字段
-        self.appendLog("  [时间字段] timestamp: \(json["timestamp"] ?? "无")")
-        self.appendLog("  [时间字段] release_timestamp: \(json["release_timestamp"] ?? "无")")
-        self.appendLog("  [时间字段] upload_date: \(json["upload_date"] ?? "无")")
-        self.appendLog("  [时间字段] release_date: \(json["release_date"] ?? "无")")
-        
-        // 尝试其他可能的时间字段
-        let otherTimeFields = ["published_timestamp", "created_timestamp", "modified_timestamp", "published", "availability", 
-                               "epoch", "filetime", "date", "datetime", "publishedTime", "upload_date_precision"]
-        for field in otherTimeFields {
-            if let value = json[field] {
-                self.appendLog("  [时间字段] \(field): \(value)")
-            }
-        }
-        
-        // 尝试解析 ISO 8601 格式的时间字符串
-        if let published = json["published"] as? String {
-            self.appendLog("  [调试] published 字符串: \(published)")
-            let isoFormatter = ISO8601DateFormatter()
-            if let date = isoFormatter.date(from: published) {
-                self.appendLog("  [调试] ISO 8601 解析成功: \(date)")
-            }
-        }
-        
-        // 尝试多种方式获取发布时间
+        // 时间解析（与原逻辑一致）
         var publishDate: Date
         let publishTime: String
         
-        // 1. 尝试 timestamp (Unix timestamp)
         if let ts = json["timestamp"] as? TimeInterval {
             publishDate = Date(timeIntervalSince1970: ts)
-        }
-        // 2. 尝试 release_timestamp
-        else if let ts = json["release_timestamp"] as? TimeInterval {
+        } else if let ts = json["release_timestamp"] as? TimeInterval {
             publishDate = Date(timeIntervalSince1970: ts)
-        }
-        // 2.5. 尝试 epoch (Unix timestamp in milliseconds or seconds)
-        else if let epoch = json["epoch"] as? TimeInterval {
-            // epoch 可能是毫秒或秒，需要判断
-            if epoch > 1000000000000 {
-                // 毫秒，转换为秒
-                publishDate = Date(timeIntervalSince1970: epoch / 1000)
-            } else {
-                publishDate = Date(timeIntervalSince1970: epoch)
-            }
-        }
-        // 2.6. 尝试解析 ISO 8601 格式的时间字符串
-        else if let published = json["published"] as? String {
+        } else if let epoch = json["epoch"] as? TimeInterval {
+            publishDate = epoch > 1000000000000
+                ? Date(timeIntervalSince1970: epoch / 1000)
+                : Date(timeIntervalSince1970: epoch)
+        } else if let published = json["published"] as? String {
             let isoFormatter = ISO8601DateFormatter()
             if let date = isoFormatter.date(from: published) {
                 publishDate = date
             } else {
-                // 尝试其他日期格式
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
-                if let date = dateFormatter.date(from: published) {
-                    publishDate = date
-                } else {
-                    publishDate = video.publishDate
-                }
+                publishDate = dateFormatter.date(from: published) ?? video.publishDate
             }
-        }
-        // 3. 尝试 upload_date (格式: YYYYMMDD)
-        else if let uploadDateStr = json["upload_date"] as? String,
-                uploadDateStr.count == 8 {
+        } else if let uploadDateStr = json["upload_date"] as? String, uploadDateStr.count == 8 {
             let year = Int(uploadDateStr[..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 4)])!
             let month = Int(uploadDateStr[uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 4)..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 6)])!
             let day = Int(uploadDateStr[uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 6)..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 8)])!
-            
             var components = DateComponents()
-            components.year = year
-            components.month = month
-            components.day = day
-            // 使用中午12:00作为默认时间，比00:00更合理
-            components.hour = 12
-            components.minute = 0
-            components.second = 0
-            
+            components.year = year; components.month = month; components.day = day
+            components.hour = 12; components.minute = 0; components.second = 0
             publishDate = Calendar.current.date(from: components) ?? video.publishDate
-            self.appendLog("  [调试] upload_date 解析结果: \(year)-\(month)-\(day)")
-        }
-        // 4. 尝试 release_date (格式: YYYYMMDD)
-        else if let releaseDateStr = json["release_date"] as? String,
-                releaseDateStr.count == 8 {
+        } else if let releaseDateStr = json["release_date"] as? String, releaseDateStr.count == 8 {
             let year = Int(releaseDateStr[..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 4)])!
             let month = Int(releaseDateStr[releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 4)..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 6)])!
             let day = Int(releaseDateStr[releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 6)..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 8)])!
-            
             var components = DateComponents()
-            components.year = year
-            components.month = month
-            components.day = day
-            // 使用中午12:00作为默认时间，比00:00更合理
-            components.hour = 12
-            components.minute = 0
-            components.second = 0
-            
+            components.year = year; components.month = month; components.day = day
+            components.hour = 12; components.minute = 0; components.second = 0
             publishDate = Calendar.current.date(from: components) ?? video.publishDate
-        }
-        // 5. 使用原始时间作为后备
-        else {
+        } else {
             publishDate = video.publishDate
         }
         
-        // 格式化显示时间
+        // 安全检查：未来日期修正
+        if publishDate > Date() {
+            publishDate = Date()
+        }
+        
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        
-        // 安全检查：如果日期在未来，使用当前时间
-        let now = Date()
-        if publishDate > now {
-            self.appendLog("  [警告] 解析的日期在未来(\(formatter.string(from: publishDate)))，使用当前时间")
-            publishDate = now
-        }
-        
         publishTime = formatter.string(from: publishDate)
         
-        // 调试：输出最终解析的时间
-        self.appendLog("  最终发布时间: \(publishTime)")
-        
-        // 获取视频时长
+        // 时长
         let duration: String
         if let durationSeconds = json["duration"] as? Int {
             duration = formatDuration(durationSeconds)
