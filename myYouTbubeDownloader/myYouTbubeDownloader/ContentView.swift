@@ -10,7 +10,7 @@ import Foundation
 import AppKit
 
 struct ContentView: View {
-    @State private var urlInputs = ["", "", "", "", "", "", "", "", ""]
+    @State private var urlInputs = ["", "", "", "", "", "", "", "", "", "", "", ""]
     @State private var downloadRecords: [String] = []
     
     // 多通道并发支持
@@ -51,9 +51,11 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .startDownloadFromSubscriptions)) { _ in
-            // 关闭订阅窗口并开始下载
             subscriptionsController?.closeWindow()
             startDownload()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .scheduledAutoDownload)) { _ in
+            openSubscriptionsWindow()
         }
         .overlay(
             Group {
@@ -132,8 +134,8 @@ struct ContentView: View {
             
             // 任务列表
             VStack(spacing: 12) {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(0..<9, id: \.self) { index in
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                    ForEach(0..<12, id: \.self) { index in
                         TaskInputCard(
                             index: index,
                             url: $urlInputs[index],
@@ -274,7 +276,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.4.7")
+                Text("v2.5.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -538,7 +540,7 @@ struct ContentView: View {
         
         // 收集任务
         pendingTasks = []
-        for index in 0..<9 {
+        for index in 0..<12 {
             if !urlInputs[index].isEmpty {
                 let url = urlInputs[index]
                     .trimmingCharacters(in: .whitespacesAndNewlines)

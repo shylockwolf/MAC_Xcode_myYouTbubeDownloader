@@ -2,12 +2,12 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.4.5-blue.svg)
+![Version](https://img.shields.io/badge/version-2.5.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features
 
-- **Batch Downloading**: Support for inputting up to 9 video URLs simultaneously.
+- **Batch Downloading**: Support for inputting up to 12 video URLs simultaneously.
 - **Concurrent Downloads**: 3 parallel download channels for faster processing.
 - **Smart Status Indicators**: 
   - Real-time progress monitoring for each download channel.
@@ -18,6 +18,7 @@ A powerful and user-friendly macOS application built with SwiftUI that serves as
 - **YouTube Subscriptions**: 
   - **One-click Fetching**: Quickly fetch recent videos from your YouTube subscriptions.
   - **Flexible Time Ranges**: Filter videos from the last 12, 24, 36, or 48 hours.
+  - **Scheduled Download**: Set a daily schedule to automatically fetch and download subscription videos.
   - **Direct Add**: Add subscription videos to the download queue with one click.
   - **Video Details**: View title, channel, publish time, duration, and direct links.
   - **Batch Copy**: Copy all subscription video URLs to clipboard at once.
@@ -172,7 +173,19 @@ Key Components:
 
 ## 📝 Version History
 
-### v2.4.7 (Current)
+### v2.5.0 (Current)
+- **Scheduled Download**:
+  - Added automatic scheduled download feature in YouTube subscriptions page.
+  - Configurable schedule time (default 6:00 AM, adjustable to the minute).
+  - Configurable time range filter (12h/24h/36h/48h) for scheduled fetch.
+  - Full automation: fetch subscriptions → add all URLs → start download → convert to audio, no confirmation required.
+  - Real-time status display showing system clock and trigger status.
+  - Schedule settings persisted via UserDefaults.
+- **Expanded Capacity**:
+  - Increased video input slots from 9 to 12.
+  - Grid layout updated to 4 columns × 3 rows for better screen utilization.
+
+### v2.4.7
 - **Build Fix**:
   - Fixed Xcode warning: Info.plist no longer included in Copy Bundle Resources build phase.
   - Added PBXFileSystemSynchronizedBuildFileExceptionSet to properly exclude Info.plist from bundle resources.

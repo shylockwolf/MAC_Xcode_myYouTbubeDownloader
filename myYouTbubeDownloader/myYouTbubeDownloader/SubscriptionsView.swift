@@ -14,6 +14,7 @@ extension Notification.Name {
     static let addURLToDownload = Notification.Name("addURLToDownload")
     static let addURLResult = Notification.Name("addURLResult")
     static let startDownloadFromSubscriptions = Notification.Name("startDownloadFromSubscriptions")
+    static let scheduledAutoDownload = Notification.Name("scheduledAutoDownload")
 }
 
 struct SubscriptionsView: View {
@@ -28,6 +29,10 @@ struct SubscriptionsView: View {
     @State private var addedURLSet: Set<String> = []
     
     @State private var cancellables = Set<AnyCancellable>()
+    @ObservedObject private var scheduler = SubscriptionScheduler.shared
+    @State private var now = Date()
+    private let clockTimer = Timer.publish(every: 20, on: .main, in: .common).autoconnect()
+    @State private var isAutoDownloading = false
     
     let hourOptions = [12, 24, 36, 48]
     
@@ -51,6 +56,10 @@ struct SubscriptionsView: View {
         }
         .frame(minWidth: 840, minHeight: 700)
         .background(.windowBackground)
+        .onChange(of: scheduler.isScheduled) { _ in scheduler.saveAndRefresh() }
+        .onChange(of: scheduler.scheduledTime) { _ in scheduler.saveAndRefresh() }
+        .onChange(of: scheduler.selectedHours) { _ in scheduler.saveAndRefresh() }
+        .onReceive(clockTimer) { _ in now = Date() }
         .onReceive(NotificationCenter.default.publisher(for: .addURLResult)) { notification in
             if let result = notification.userInfo?["result"] as? String {
                 addResultMessage = result
@@ -65,8 +74,16 @@ struct SubscriptionsView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("cleanupSubscriptions"))) { _ in
-            // 清理所有Combine订阅
             cancellables.removeAll()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .scheduledAutoDownload)) { _ in
+            scheduledAutoDownload()
+        }
+        .onAppear {
+            if scheduler.lastTriggered.hasPrefix("触发中") && !isAutoDownloading {
+                scheduler.lastTriggered = "获取中..."
+                scheduledAutoDownload()
+            }
         }
         .overlay(
             Group {
@@ -280,7 +297,6 @@ struct SubscriptionsView: View {
                 Spacer()
                 
                 Button(action: {
-                    // 复制所有链接到剪贴板
                     let links = videos.map { $0.url }.joined(separator: "\n")
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(links, forType: .string)
@@ -295,7 +311,70 @@ struct SubscriptionsView: View {
                 .disabled(videos.isEmpty)
             }
             
-            // 开始下载按钮
+            VStack(spacing: 8) {
+                HStack {
+                    Image(systemName: scheduler.isScheduled ? "clock.badge.checkmark" : "clock")
+                        .font(.system(size: 12))
+                        .foregroundStyle(scheduler.isScheduled ? .green : .secondary)
+                    Toggle("定时自动下载", isOn: $scheduler.isScheduled)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                    Spacer()
+                }
+                
+                if scheduler.isScheduled {
+                    HStack(spacing: 8) {
+                        DatePicker("时间", selection: $scheduler.scheduledTime, displayedComponents: .hourAndMinute)
+                            .labelsHidden()
+                            .controlSize(.small)
+                        
+                        Spacer()
+                        
+                        Picker("范围", selection: $scheduler.selectedHours) {
+                            ForEach(hourOptions, id: \.self) { hours in
+                                Text("\(hours)h").tag(hours)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 160)
+                        .controlSize(.small)
+                    }
+                    
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        Text("每天 \(nextExecutionText()) 自动获取并下载")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.blue)
+                        Text("系统时间: \(currentTimeString)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.primary)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(scheduler.lastTriggered.hasPrefix("失败") ? .red : scheduler.lastTriggered.hasPrefix("下载") ? .green : scheduler.lastTriggered.hasPrefix("获取中") ? .orange : .secondary)
+                        Text(scheduler.lastTriggered)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(scheduler.lastTriggered.hasPrefix("失败") ? .red : scheduler.lastTriggered.hasPrefix("下载") ? .green : scheduler.lastTriggered.hasPrefix("获取中") ? .orange : .secondary)
+                    }
+                }
+            }
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(scheduler.isScheduled ? Color.green.opacity(0.05) : Color.clear)
+            )
+            
             Button(action: startDownloadFromSubscriptions) {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.down.circle.fill")
@@ -353,8 +432,112 @@ struct SubscriptionsView: View {
     
     // MARK: - 从订阅页面开始下载
     private func startDownloadFromSubscriptions() {
-        // 发送通知，主窗口接收后关闭订阅窗口并开始下载
         NotificationCenter.default.post(name: .startDownloadFromSubscriptions, object: nil)
+    }
+    
+    // MARK: - 定时自动下载完整流程
+    private func scheduledAutoDownload() {
+        guard !isAutoDownloading else { return }
+        isAutoDownloading = true
+        
+        selectedHours = scheduler.selectedHours
+        isLoading = true
+        errorMessage = nil
+        logs.removeAll()
+        cancellables.removeAll()
+        
+        logs.append("[定时下载] ⏰ 定时任务触发，开始自动获取订阅视频...")
+        logs.append("[定时下载] 时间范围: \(selectedHours)小时")
+        
+        YouTubeSubscriptionsFetcher.shared.$logs
+            .receive(on: DispatchQueue.main)
+            .sink { newLogs in
+                self.logs = newLogs
+            }
+            .store(in: &cancellables)
+        
+        YouTubeSubscriptionsFetcher.shared.fetchVideos(hours: selectedHours)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { completion in
+                self.isLoading = false
+                switch completion {
+                case .finished:
+                    self.lastUpdated = Date()
+                    self.logs.append("[定时下载] ✅ 获取完成，共 \(self.videos.count) 个视频")
+                    self.autoAddAllAndDownload()
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                    self.logs.append("[定时下载] ❌ 获取失败: \(error.localizedDescription)")
+                    self.isAutoDownloading = false
+                }
+            }, receiveValue: { fetchedVideos in
+                self.videos = fetchedVideos
+            })
+            .store(in: &cancellables)
+    }
+    
+    // MARK: - 自动添加所有URL并开始下载
+    private func autoAddAllAndDownload() {
+        guard !videos.isEmpty else {
+            logs.append("[定时下载] 没有新视频，跳过下载")
+            isAutoDownloading = false
+            return
+        }
+        
+        logs.append("[定时下载] 正在添加 \(videos.count) 个视频到下载列表...")
+        
+        for (index, video) in videos.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.15) {
+                NotificationCenter.default.post(
+                    name: .addURLToDownload,
+                    object: nil,
+                    userInfo: ["url": video.url]
+                )
+            }
+        }
+        
+        let delay = Double(videos.count) * 0.15 + 0.5
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            self.logs.append("[定时下载] 🚀 开始下载 \(self.videos.count) 个视频")
+            self.isAutoDownloading = false
+            NotificationCenter.default.post(name: .startDownloadFromSubscriptions, object: nil)
+        }
+    }
+    
+    // MARK: - 当前时间字符串
+    private var currentTimeString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: now)
+    }
+    
+    // MARK: - 定时执行时间显示
+    private func nextExecutionText() -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.hour, .minute], from: scheduler.scheduledTime)
+        
+        guard let hour = components.hour, let minute = components.minute else { return "06:00" }
+        
+        var nextDateComponents = calendar.dateComponents([.year, .month, .day], from: now)
+        nextDateComponents.hour = hour
+        nextDateComponents.minute = minute
+        nextDateComponents.second = 0
+        
+        guard var nextDate = calendar.date(from: nextDateComponents) else {
+            return String(format: "%02d:%02d", hour, minute)
+        }
+        
+        if nextDate <= now {
+            nextDate = calendar.date(byAdding: .day, value: 1, to: nextDate)!
+        }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let timeString = formatter.string(from: nextDate)
+        
+        let isToday = calendar.isDateInToday(nextDate)
+        return "\(isToday ? "今天" : "明天") \(timeString)"
     }
     
     // MARK: - 日期格式化
@@ -1340,6 +1523,127 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
             publishDate: publishDate,
             duration: duration
         )
+    }
+}
+
+// MARK: - 定时下载调度器
+class SubscriptionScheduler: ObservableObject {
+    static let shared = SubscriptionScheduler()
+    
+    @Published var isScheduled: Bool = false
+    @Published var lastTriggered: String = "未触发"
+    @Published var scheduledTime: Date = {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = 6
+        components.minute = 0
+        return Calendar.current.date(from: components) ?? Date()
+    }()
+    @Published var selectedHours: Int = 36
+    
+    private var timer: Timer?
+    private var lastExecutionDate: Date?
+    private var cancellables = Set<AnyCancellable>()
+    
+    private init() {
+        let savedEnabled = UserDefaults.standard.bool(forKey: "sub_scheduler_enabled")
+        let savedTimeInterval = UserDefaults.standard.double(forKey: "sub_scheduler_time")
+        let savedHours = UserDefaults.standard.integer(forKey: "sub_scheduler_hours")
+        
+        isScheduled = savedEnabled
+        
+        if savedTimeInterval != 0 {
+            scheduledTime = Date(timeIntervalSinceReferenceDate: savedTimeInterval)
+        } else {
+            var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+            components.hour = 6
+            components.minute = 0
+            scheduledTime = Calendar.current.date(from: components) ?? Date()
+        }
+        
+        selectedHours = (savedHours == 0) ? 36 : savedHours
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        print("[定时下载] 🔧 调度器初始化: isScheduled=\(isScheduled), 时间=\(formatter.string(from: scheduledTime)), 范围=\(selectedHours)h, 当前=\(formatter.string(from: Date()))")
+        
+        if isScheduled {
+            ensureTimerRunning()
+        }
+    }
+    
+    func saveAndRefresh() {
+        UserDefaults.standard.set(isScheduled, forKey: "sub_scheduler_enabled")
+        UserDefaults.standard.set(scheduledTime.timeIntervalSinceReferenceDate, forKey: "sub_scheduler_time")
+        UserDefaults.standard.set(selectedHours, forKey: "sub_scheduler_hours")
+        
+        if isScheduled {
+            ensureTimerRunning()
+        } else {
+            cancelTimer()
+        }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        print("[定时下载] 💾 设置已保存: isScheduled=\(isScheduled), 目标=\(scheduledTime)")
+    }
+    
+    private func ensureTimerRunning() {
+        if timer == nil || !timer!.isValid {
+            let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+                self?.checkSchedule()
+            }
+            RunLoop.main.add(t, forMode: .common)
+            timer = t
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        print("[定时下载] ⏱ 定时器运行中，每10秒检查，当前: \(formatter.string(from: Date())), 目标: \(scheduledTime)")
+    }
+    
+    func cancelTimer() {
+        timer?.invalidate()
+        timer = nil
+        print("[定时下载] 🛑 定时器已停止")
+    }
+    
+    private func checkSchedule() {
+        guard isScheduled else { return }
+        
+        let now = Date()
+        let calendar = Calendar.current
+        let scheduledComponents = calendar.dateComponents([.hour, .minute], from: scheduledTime)
+        let nowComponents = calendar.dateComponents([.hour, .minute], from: now)
+        
+        guard let schedHour = scheduledComponents.hour,
+              let schedMinute = scheduledComponents.minute,
+              let nowHour = nowComponents.hour,
+              let nowMinute = nowComponents.minute else { return }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        print("[定时下载] 🔍 \(formatter.string(from: now)) | 目标:\(schedHour):\(String(format: "%02d", schedMinute)) | 当前:\(nowHour):\(String(format: "%02d", nowMinute))")
+        
+        guard nowHour == schedHour && nowMinute == schedMinute else { return }
+        
+        let today = calendar.startOfDay(for: now)
+        if lastExecutionDate == today {
+            print("[定时下载] ⏭ 今天已执行过，跳过")
+            return
+        }
+        lastExecutionDate = today
+        print("[定时下载] ⏰ 时间匹配！开始执行")
+        executeScheduledTask()
+    }
+    
+    private func executeScheduledTask() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        lastTriggered = "触发中 \(formatter.string(from: Date()))"
+        print("[定时下载] 🚀 定时任务触发，发送自动下载通知")
+        
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .scheduledAutoDownload, object: nil)
+        }
     }
 }
 
