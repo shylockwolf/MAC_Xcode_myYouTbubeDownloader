@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var completedTasks: Set<Int> = []
     
     @State private var pendingTasks: [(index: Int, url: String)] = []
+    @State private var urlToPublishDate: [String: Date] = [:]
     
     // 动画状态
     @State private var buttonScale: CGFloat = 1.0
@@ -47,6 +48,9 @@ struct ContentView: View {
         .background(.windowBackground)
         .onReceive(NotificationCenter.default.publisher(for: .addURLToDownload)) { notification in
             if let url = notification.userInfo?["url"] as? String {
+                if let publishTimeInterval = notification.userInfo?["publishDate"] as? TimeInterval {
+                    urlToPublishDate[url] = Date(timeIntervalSince1970: publishTimeInterval)
+                }
                 addURLToFirstEmptySlot(url: url)
             }
         }
@@ -276,7 +280,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.5.0")
+                Text("v2.6.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -605,7 +609,7 @@ struct ContentView: View {
         // yt-dlp 的可执行路径（兼容 Intel 与 Apple Silicon）
         let ytDlpPath = resolveYtDlpPath()
         
-        var command = "\"\(ytDlpPath)\" --extractor-args \"youtube:player_client=android\""
+        var command = "\"\(ytDlpPath)\" --extractor-args \"youtube:player_client=android\" --write-info-json"
         if convertToMp3 {
             command += " -x --audio-format mp3 --embed-thumbnail"
         }
@@ -620,11 +624,87 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 if success {
                     self.appendLog(slotIndex: slotIndex, message: "✓ 视频 \(index + 1) 下载完成")
+                    
+                    if let finalName = self.extractFinalFilename(from: self.slotLogs[slotIndex]) {
+                        let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSHomeDirectory() + "/Downloads")
+                        let originalPath = downloadsDir.appendingPathComponent(finalName)
+                        
+                        self.appendLog(slotIndex: slotIndex, message: "📁 下载文件: \(finalName)")
+                        
+                        var publishDate = self.urlToPublishDate[url]
+                        
+                        if publishDate == nil {
+                            let fileNameWithoutExt = finalName.components(separatedBy: ".").dropLast().joined(separator: ".")
+                            let infoJsonPath = downloadsDir.appendingPathComponent(fileNameWithoutExt + ".info.json")
+                            
+                            self.appendLog(slotIndex: slotIndex, message: "🔍 尝试读取 info.json: \(infoJsonPath.lastPathComponent)")
+                            
+                            if FileManager.default.fileExists(atPath: infoJsonPath.path) {
+                                do {
+                                    let data = try Data(contentsOf: infoJsonPath)
+                                    if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                                        if let uploadDate = json["upload_date"] as? String {
+                                            let formatter = DateFormatter()
+                                            formatter.dateFormat = "yyyyMMdd"
+                                            if let date = formatter.date(from: uploadDate) {
+                                                publishDate = date
+                                                self.appendLog(slotIndex: slotIndex, message: "✅ 从 info.json 获取发布日期: \(uploadDate)")
+                                            } else {
+                                                self.appendLog(slotIndex: slotIndex, message: "⚠️ 日期格式解析失败: \(uploadDate)")
+                                            }
+                                        } else if let releaseDate = json["release_date"] as? String {
+                                            let formatter = DateFormatter()
+                                            formatter.dateFormat = "yyyyMMdd"
+                                            if let date = formatter.date(from: releaseDate) {
+                                                publishDate = date
+                                                self.appendLog(slotIndex: slotIndex, message: "✅ 从 info.json 获取发布日期: \(releaseDate)")
+                                            } else {
+                                                self.appendLog(slotIndex: slotIndex, message: "⚠️ 日期格式解析失败: \(releaseDate)")
+                                            }
+                                        } else {
+                                            self.appendLog(slotIndex: slotIndex, message: "⚠️ info.json 中未找到 upload_date 或 release_date")
+                                        }
+                                    }
+                                    try FileManager.default.removeItem(at: infoJsonPath)
+                                    self.appendLog(slotIndex: slotIndex, message: "🗑️ 已删除 info.json")
+                                } catch {
+                                    self.appendLog(slotIndex: slotIndex, message: "⚠️ 读取 info.json 失败: \(error.localizedDescription)")
+                                }
+                            } else {
+                                self.appendLog(slotIndex: slotIndex, message: "❌ info.json 不存在")
+                            }
+                        } else {
+                            self.appendLog(slotIndex: slotIndex, message: "✅ 使用订阅页面传递的发布日期")
+                        }
+                        
+                        if let publishDate = publishDate {
+                            let hoursDiff = Int(Date().timeIntervalSince(publishDate) / 3600)
+                            let prefix = "\(hoursDiff)H_"
+                            let newName = prefix + finalName
+                            let newPath = downloadsDir.appendingPathComponent(newName)
+                            
+                            do {
+                                if FileManager.default.fileExists(atPath: newPath.path) {
+                                    try FileManager.default.removeItem(at: newPath)
+                                }
+                                try FileManager.default.moveItem(at: originalPath, to: newPath)
+                                self.appendLog(slotIndex: slotIndex, message: "📝 重命名文件: \(finalName) → \(newName)")
+                                self.downloadRecords.append(newName)
+                            } catch {
+                                self.appendLog(slotIndex: slotIndex, message: "⚠️ 重命名失败: \(error.localizedDescription)")
+                                self.downloadRecords.append(finalName)
+                            }
+                            self.urlToPublishDate.removeValue(forKey: url)
+                        } else {
+                            self.appendLog(slotIndex: slotIndex, message: "⚠️ 无法获取发布日期，跳过重命名")
+                            self.downloadRecords.append(finalName)
+                        }
+                    } else {
+                        self.appendLog(slotIndex: slotIndex, message: "❌ 无法从日志中提取文件名")
+                    }
+                    
                     self.urlInputs[index] = ""
                     self.completedTasks.remove(index)
-                    if let name = self.extractFinalFilename(from: self.slotLogs[slotIndex]) {
-                        self.downloadRecords.append(name)
-                    }
                 } else {
                     self.appendLog(slotIndex: slotIndex, message: "✗ 视频 \(index + 1) 下载失败")
                 }

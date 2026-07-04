@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.5.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.6.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features
@@ -18,10 +18,14 @@ A powerful and user-friendly macOS application built with SwiftUI that serves as
 - **YouTube Subscriptions**: 
   - **One-click Fetching**: Quickly fetch recent videos from your YouTube subscriptions.
   - **Flexible Time Ranges**: Filter videos from the last 12, 24, 36, or 48 hours.
+  - **One-Click Download**: Automatically fetch, filter, and download all subscription videos in one click.
   - **Scheduled Download**: Set a daily schedule to automatically fetch and download subscription videos.
   - **Direct Add**: Add subscription videos to the download queue with one click.
   - **Video Details**: View title, channel, publish time, duration, and direct links.
   - **Batch Copy**: Copy all subscription video URLs to clipboard at once.
+- **Smart File Naming**: 
+  - Downloaded files automatically prefixed with time difference (e.g., `3H_视频标题.mp4`).
+  - The prefix shows the hours between video publish time and download time.
 - **Live Logs**: Real-time command execution logs with auto-scrolling terminal-like interface.
 - **Download Records**: Track all completed downloads in a dedicated section.
 - **Modern UI**: Clean sidebar layout with native macOS look and feel.
@@ -97,8 +101,9 @@ myYouTbubeDownloader/
 
 #### 2. **ContentView.swift**
 Main download interface featuring:
-- **Task Management**: 9 video input slots with status tracking
+- **Task Management**: 12 video input slots with status tracking (4 columns × 3 rows)
 - **Concurrent Downloads**: 3 parallel download channels with independent logs
+- **Smart File Naming**: Downloaded files automatically prefixed with publish time difference (e.g., `3H_视频标题.mp4`)
 - **Download Records**: Tracks completed downloads with filenames
 - **Command Execution**: Handles yt-dlp process management
 - **URL Processing**: Handles Weibo short links and redirects
@@ -162,25 +167,37 @@ Key Components:
    Press `Command + R` to launch the application.
 
 4. **How to Use**:
-   - Paste YouTube video URLs into the input fields (Video 1 to Video 9).
+   - Paste YouTube video URLs into the input fields (Video 1 to Video 12).
    - Or click "**查看订阅**" (View Subscriptions) to fetch and add videos from your YouTube feed.
+   - In the subscription window:
+     - Select a time range (12h/24h/36h/48h) to filter recent videos.
+     - Click "**一键下载**" (One-Click Download) to automatically fetch, filter, and download all videos.
+     - Or click "**开始**" to manually fetch and select individual videos to add.
    - Toggle "转换为 MP3 格式" if you want audio only.
    - Click "**开始下载**" (Start Download).
    - Watch the logs for progress in the 3 download channels.
-   - Files are saved to your `Downloads` folder.
+   - Files are saved to your `Downloads` folder with auto-generated names (e.g., `3H_视频标题.mp4`).
    - Use "**取消下载**" (Cancel Download) to stop ongoing downloads.
    - Use "**退出应用**" (Exit App) to close the application.
 
 ## 📝 Version History
 
-### v2.5.0 (Current)
+### v2.6.0 (Current)
+- **One-Click Download**:
+  - Added "一键下载" (One-Click Download) button in YouTube subscriptions page.
+  - Automatically completes the entire workflow: fetch subscriptions → filter by time range → add all URLs → start download → convert to audio.
+  - Uses the time range selected in the UI (12h/24h/36h/48h).
 - **Scheduled Download**:
   - Added automatic scheduled download feature in YouTube subscriptions page.
   - Configurable schedule time (default 6:00 AM, adjustable to the minute).
-  - Configurable time range filter (12h/24h/36h/48h) for scheduled fetch.
+  - Now uses the same time range selector as one-click download (unified source).
   - Full automation: fetch subscriptions → add all URLs → start download → convert to audio, no confirmation required.
   - Real-time status display showing system clock and trigger status.
   - Schedule settings persisted via UserDefaults.
+- **Smart File Naming**:
+  - Downloaded files automatically prefixed with time difference (e.g., `3H_视频标题.mp4`, `15H_视频标题.mp3`).
+  - The prefix number represents the hours between video publish time and current time.
+  - Works for both subscription videos (exact publish time) and manually entered URLs (read from video info).
 - **Expanded Capacity**:
   - Increased video input slots from 9 to 12.
   - Grid layout updated to 4 columns × 3 rows for better screen utilization.

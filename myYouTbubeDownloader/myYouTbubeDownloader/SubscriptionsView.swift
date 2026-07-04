@@ -58,7 +58,6 @@ struct SubscriptionsView: View {
         .background(.windowBackground)
         .onChange(of: scheduler.isScheduled) { _ in scheduler.saveAndRefresh() }
         .onChange(of: scheduler.scheduledTime) { _ in scheduler.saveAndRefresh() }
-        .onChange(of: scheduler.selectedHours) { _ in scheduler.saveAndRefresh() }
         .onReceive(clockTimer) { _ in now = Date() }
         .onReceive(NotificationCenter.default.publisher(for: .addURLResult)) { notification in
             if let result = notification.userInfo?["result"] as? String {
@@ -222,6 +221,24 @@ struct SubscriptionsView: View {
                 .buttonStyle(.plain)
                 .disabled(isLoading)
                 
+                // 一键下载按钮
+                Button(action: oneClickDownload) {
+                    HStack(spacing: 4) {
+                        Image(systemName: isAutoDownloading ? "arrow.clockwise" : "bolt.fill")
+                            .font(.system(size: 10))
+                        Text(isAutoDownloading ? "一键下载中..." : "一键下载")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(4)
+                    .fixedSize()
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoading || isAutoDownloading)
+                
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -330,14 +347,9 @@ struct SubscriptionsView: View {
                         
                         Spacer()
                         
-                        Picker("范围", selection: $scheduler.selectedHours) {
-                            ForEach(hourOptions, id: \.self) { hours in
-                                Text("\(hours)h").tag(hours)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 160)
-                        .controlSize(.small)
+                        Text("时间范围: \(selectedHours)h")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
                     }
                     
                     HStack {
@@ -389,7 +401,7 @@ struct SubscriptionsView: View {
                 .cornerRadius(8)
             }
             .buttonStyle(.plain)
-            .disabled(videos.isEmpty)
+            .disabled(videos.isEmpty || isLoading || isAutoDownloading)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -440,7 +452,6 @@ struct SubscriptionsView: View {
         guard !isAutoDownloading else { return }
         isAutoDownloading = true
         
-        selectedHours = scheduler.selectedHours
         isLoading = true
         errorMessage = nil
         logs.removeAll()
@@ -479,29 +490,78 @@ struct SubscriptionsView: View {
     // MARK: - 自动添加所有URL并开始下载
     private func autoAddAllAndDownload() {
         guard !videos.isEmpty else {
-            logs.append("[定时下载] 没有新视频，跳过下载")
+            logs.append("[一键下载] 没有新视频，跳过下载")
             isAutoDownloading = false
             return
         }
         
-        logs.append("[定时下载] 正在添加 \(videos.count) 个视频到下载列表...")
+        logs.append("[一键下载] 正在添加 \(videos.count) 个视频到下载列表...")
         
         for (index, video) in videos.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.15) {
                 NotificationCenter.default.post(
                     name: .addURLToDownload,
                     object: nil,
-                    userInfo: ["url": video.url]
+                    userInfo: ["url": video.url, "publishDate": video.publishDate.timeIntervalSince1970]
                 )
             }
         }
         
         let delay = Double(videos.count) * 0.15 + 0.5
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            self.logs.append("[定时下载] 🚀 开始下载 \(self.videos.count) 个视频")
+            self.logs.append("[一键下载] 🚀 开始下载 \(self.videos.count) 个视频")
             self.isAutoDownloading = false
             NotificationCenter.default.post(name: .startDownloadFromSubscriptions, object: nil)
         }
+    }
+    
+    // MARK: - 一键下载：收集-选择-下载-转码
+    private func oneClickDownload() {
+        guard !isAutoDownloading else { return }
+        
+        // 如果已有视频，直接添加并下载
+        if !videos.isEmpty {
+            isAutoDownloading = true
+            logs.append("[一键下载] 🚀 使用已获取的 \(videos.count) 个视频")
+            autoAddAllAndDownload()
+            return
+        }
+        
+        // 没有视频，先获取再下载
+        isAutoDownloading = true
+        isLoading = true
+        errorMessage = nil
+        logs.removeAll()
+        cancellables.removeAll()
+        
+        logs.append("[一键下载] 🚀 开始一键下载流程...")
+        logs.append("[一键下载] 时间范围: \(selectedHours)小时")
+        
+        YouTubeSubscriptionsFetcher.shared.$logs
+            .receive(on: DispatchQueue.main)
+            .sink { newLogs in
+                self.logs = newLogs
+            }
+            .store(in: &cancellables)
+        
+        YouTubeSubscriptionsFetcher.shared.fetchVideos(hours: selectedHours, enrichDetails: true)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { completion in
+                self.isLoading = false
+                switch completion {
+                case .finished:
+                    self.lastUpdated = Date()
+                    self.logs.append("[一键下载] ✅ 获取完成，共 \(self.videos.count) 个视频")
+                    self.autoAddAllAndDownload()
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                    self.logs.append("[一键下载] ❌ 获取失败: \(error.localizedDescription)")
+                    self.isAutoDownloading = false
+                }
+            }, receiveValue: { fetchedVideos in
+                self.videos = fetchedVideos
+            })
+            .store(in: &cancellables)
     }
     
     // MARK: - 当前时间字符串
@@ -675,7 +735,7 @@ struct VideoListItem: View {
                     NotificationCenter.default.post(
                         name: .addURLToDownload,
                         object: nil,
-                        userInfo: ["url": video.url]
+                        userInfo: ["url": video.url, "publishDate": video.publishDate.timeIntervalSince1970]
                     )
                 }) {
                     HStack(spacing: 4) {
@@ -832,7 +892,7 @@ struct VideoDetailView: View {
                 NotificationCenter.default.post(
                     name: .addURLToDownload,
                     object: nil,
-                    userInfo: ["url": video.url]
+                    userInfo: ["url": video.url, "publishDate": video.publishDate.timeIntervalSince1970]
                 )
             }) {
                 HStack(spacing: 8) {
@@ -961,7 +1021,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         }
     }
     
-    func fetchVideos(hours: Int = 48) -> AnyPublisher<[VideoItem], Error> {
+    func fetchVideos(hours: Int = 48, enrichDetails: Bool = true) -> AnyPublisher<[VideoItem], Error> {
         return Future<[VideoItem], Error> { [weak self] promise in
             guard let self = self else { return }
             
@@ -993,7 +1053,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                     if self.cancellationToken { return }
                     
                     // 解析页面内容，提取视频信息
-                    let videos = try self.parseVideos(from: subscriptionsPage)
+                    let videos = try self.parseVideos(from: subscriptionsPage, enrichDetails: enrichDetails)
                     
                     // 过滤出指定时间内的视频
                     let timeAgo = Date().addingTimeInterval(-Double(hours) * 60 * 60)
@@ -1221,7 +1281,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
     }
     
     // MARK: - 解析视频信息
-    private func parseVideos(from jsonOutput: String) throws -> [VideoItem] {
+    private func parseVideos(from jsonOutput: String, enrichDetails: Bool = true) throws -> [VideoItem] {
         var videos: [VideoItem] = []
         
         // 分割JSON输出，每行一个视频
@@ -1301,9 +1361,12 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         self.appendLog("成功解析出 \(videos.count) 个视频")
         
         // 批量获取所有视频的详细信息（一次调用 yt-dlp）
-        let enrichedVideos = self.batchFetchVideoDetails(videos: videos, ytDlpPath: "/opt/homebrew/bin/yt-dlp")
+        if enrichDetails {
+            let enrichedVideos = self.batchFetchVideoDetails(videos: videos, ytDlpPath: "/opt/homebrew/bin/yt-dlp")
+            return enrichedVideos
+        }
         
-        return enrichedVideos
+        return videos
     }
     
     // MARK: - 批量获取视频详情
@@ -1336,7 +1399,10 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
             "--skip-download",
             "--no-warnings",
             "--ignore-errors",
-            "--playlist-items", "1"
+            "--playlist-items", "1",
+            "--socket-timeout", "15",
+            "--retries", "1",
+            "--fragment-retries", "1"
         ]
         for video in videos {
             arguments.append(video.url)
@@ -1379,8 +1445,8 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         do {
             try process.run()
             
-            // 批量获取超时：每个视频30秒 + 基础30秒
-            let timeout = Double(videos.count * 30 + 30)
+            // 批量获取超时：每个视频15秒 + 基础15秒
+            let timeout = Double(videos.count * 15 + 15)
             let timeoutResult = semaphore.wait(timeout: .now() + timeout)
             
             if timeoutResult == .timedOut {
@@ -1538,7 +1604,6 @@ class SubscriptionScheduler: ObservableObject {
         components.minute = 0
         return Calendar.current.date(from: components) ?? Date()
     }()
-    @Published var selectedHours: Int = 36
     
     private var timer: Timer?
     private var lastExecutionDate: Date?
@@ -1547,7 +1612,6 @@ class SubscriptionScheduler: ObservableObject {
     private init() {
         let savedEnabled = UserDefaults.standard.bool(forKey: "sub_scheduler_enabled")
         let savedTimeInterval = UserDefaults.standard.double(forKey: "sub_scheduler_time")
-        let savedHours = UserDefaults.standard.integer(forKey: "sub_scheduler_hours")
         
         isScheduled = savedEnabled
         
@@ -1560,11 +1624,9 @@ class SubscriptionScheduler: ObservableObject {
             scheduledTime = Calendar.current.date(from: components) ?? Date()
         }
         
-        selectedHours = (savedHours == 0) ? 36 : savedHours
-        
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
-        print("[定时下载] 🔧 调度器初始化: isScheduled=\(isScheduled), 时间=\(formatter.string(from: scheduledTime)), 范围=\(selectedHours)h, 当前=\(formatter.string(from: Date()))")
+        print("[定时下载] 🔧 调度器初始化: isScheduled=\(isScheduled), 时间=\(formatter.string(from: scheduledTime)), 当前=\(formatter.string(from: Date()))")
         
         if isScheduled {
             ensureTimerRunning()
@@ -1574,7 +1636,6 @@ class SubscriptionScheduler: ObservableObject {
     func saveAndRefresh() {
         UserDefaults.standard.set(isScheduled, forKey: "sub_scheduler_enabled")
         UserDefaults.standard.set(scheduledTime.timeIntervalSinceReferenceDate, forKey: "sub_scheduler_time")
-        UserDefaults.standard.set(selectedHours, forKey: "sub_scheduler_hours")
         
         if isScheduled {
             ensureTimerRunning()
