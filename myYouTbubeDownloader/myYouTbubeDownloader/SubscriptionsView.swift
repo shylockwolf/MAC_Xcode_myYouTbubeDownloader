@@ -425,7 +425,7 @@ struct SubscriptionsView: View {
             }
             .store(in: &cancellables)
         
-        YouTubeSubscriptionsFetcher.shared.fetchVideos(hours: selectedHours)
+        YouTubeSubscriptionsFetcher.shared.fetchVideos(hours: selectedHours, enrichDetails: true)
             .receive(on: DispatchQueue.main)
             .sink(receiveCompletion: { completion in
                 isLoading = false
@@ -467,7 +467,7 @@ struct SubscriptionsView: View {
             }
             .store(in: &cancellables)
         
-        YouTubeSubscriptionsFetcher.shared.fetchVideos(hours: selectedHours)
+        YouTubeSubscriptionsFetcher.shared.fetchVideos(hours: selectedHours, enrichDetails: true)
             .receive(on: DispatchQueue.main)
             .sink(receiveCompletion: { completion in
                 self.isLoading = false
@@ -1062,12 +1062,16 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                     formatter.timeStyle = .short
                     self.appendLog("过滤时间范围: \(formatter.string(from: timeAgo)) 之后")
                     
-                    for video in videos {
+                    // 先过滤掉没有有效时间戳的视频（日期为 epoch 0）
+                    let validVideos = videos.filter { $0.publishDate.timeIntervalSince1970 > 0 }
+                    self.appendLog("过滤掉 \(videos.count - validVideos.count) 个没有时间戳的视频")
+                    
+                    for video in validVideos {
                         let isInTimeRange = video.publishDate >= timeAgo
                         self.appendLog("视频: \(video.title.prefix(20))... - 发布时间: \(formatter.string(from: video.publishDate)) - \(isInTimeRange ? "✓符合" : "✗超时")")
                     }
                     
-                    let recentVideos = videos.filter { $0.publishDate >= timeAgo }
+                    let recentVideos = validVideos.filter { $0.publishDate >= timeAgo }
                     
                     // 按发布时间排序（最新的在前）
                     let sortedVideos = recentVideos.sorted(by: { $0.publishDate > $1.publishDate })
