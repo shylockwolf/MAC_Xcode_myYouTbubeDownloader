@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.6.1-blue.svg)
+![Version](https://img.shields.io/badge/version-2.6.2-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features  
@@ -182,7 +182,7 @@ Key Components:
 
 ## 📝 Version History
 
-### v2.6.1 (Current)
+### v2.6.2 (Current)
 - **yt-dlp Path Management**:
   - Added `YtDlpLocator` utility class for centralized yt-dlp path detection and caching.
   - Automatically saves detected yt-dlp path to UserDefaults for future use.
@@ -199,7 +199,7 @@ Key Components:
   - Fixed yt-dlp path hardcoding in subscription view.
   - Unified yt-dlp path detection across all components.
 
-### v2.6.0
+### v2.6.2
 - **One-Click Download**:
   - Added "一键下载" (One-Click Download) button in YouTube subscriptions page.
   - Automatically completes the entire workflow: fetch subscriptions → filter by time range → add all URLs → start download → convert to audio.
