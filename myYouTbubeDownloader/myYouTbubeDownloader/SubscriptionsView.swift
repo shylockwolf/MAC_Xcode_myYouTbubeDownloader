@@ -1062,16 +1062,26 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                     formatter.timeStyle = .short
                     self.appendLog("过滤时间范围: \(formatter.string(from: timeAgo)) 之后")
                     
-                    // 先过滤掉没有有效时间戳的视频（日期为 epoch 0）
-                    let validVideos = videos.filter { $0.publishDate.timeIntervalSince1970 > 0 }
-                    self.appendLog("过滤掉 \(videos.count - validVideos.count) 个没有时间戳的视频")
-                    
-                    for video in validVideos {
-                        let isInTimeRange = video.publishDate >= timeAgo
-                        self.appendLog("视频: \(video.title.prefix(20))... - 发布时间: \(formatter.string(from: video.publishDate)) - \(isInTimeRange ? "✓符合" : "✗超时")")
+                    // 统计无时间戳视频
+                    let noTimestampVideos = videos.filter { $0.publishDate.timeIntervalSince1970 == 0 }
+                    if !noTimestampVideos.isEmpty {
+                        self.appendLog("⚠️ ⚠️ ⚠️ 发现 \(noTimestampVideos.count) 个视频没有时间戳，详细信息：")
+                        for video in noTimestampVideos {
+                            self.appendLog("   ⚠️ 标题: \(video.title)")
+                            self.appendLog("      URL: \(video.url)")
+                            self.appendLog("      频道: \(video.channel)")
+                            self.appendLog("      时长: \(video.duration)")
+                        }
+                        self.appendLog("⚠️ ⚠️ ⚠️ 以上视频因无时间戳将被排除")
                     }
                     
-                    let recentVideos = validVideos.filter { $0.publishDate >= timeAgo }
+                    for video in videos {
+                        let isInTimeRange = video.publishDate >= timeAgo
+                        let status = video.publishDate.timeIntervalSince1970 == 0 ? "⚠️无时间戳" : (isInTimeRange ? "✓符合" : "✗超时")
+                        self.appendLog("视频: \(video.title.prefix(20))... - 发布时间: \(formatter.string(from: video.publishDate)) - \(status)")
+                    }
+                    
+                    let recentVideos = videos.filter { $0.publishDate >= timeAgo }
                     
                     // 按发布时间排序（最新的在前）
                     let sortedVideos = recentVideos.sorted(by: { $0.publishDate > $1.publishDate })
