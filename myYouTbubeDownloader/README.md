@@ -5,7 +5,7 @@ A powerful and user-friendly macOS application built with SwiftUI that serves as
 ![Version](https://img.shields.io/badge/version-2.6.1-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
-## ✨ Features
+## ✨ Features  
 
 - **Batch Downloading**: Support for inputting up to 12 video URLs simultaneously.
 - **Concurrent Downloads**: 3 parallel download channels for faster processing.
