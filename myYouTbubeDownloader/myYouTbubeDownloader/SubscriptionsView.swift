@@ -1053,7 +1053,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                     if self.cancellationToken { return }
                     
                     // 解析页面内容，提取视频信息
-                    let videos = try self.parseVideos(from: subscriptionsPage, enrichDetails: enrichDetails)
+                    let videos = try self.parseVideos(from: subscriptionsPage, enrichDetails: enrichDetails, ytDlpPath: ytDlpPath)
                     
                     // 过滤出指定时间内的视频
                     let timeAgo = Date().addingTimeInterval(-Double(hours) * 60 * 60)
@@ -1092,59 +1092,14 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
     private func checkYtDlpExists() throws -> String {
         appendLog("检查yt-dlp是否存在...")
         
-        let fileManager = FileManager.default
-        
-        // 常见安装路径：Apple Silicon 与 Intel
-        let candidatePaths = [
-            "/opt/homebrew/bin/yt-dlp",
-            "/usr/local/bin/yt-dlp"
-        ]
-        
-        for path in candidatePaths {
-            if fileManager.isExecutableFile(atPath: path) {
-                appendLog("yt-dlp 已找到: \(path)")
-                return path
-            } else {
-                appendLog("未在 \(path) 找到 yt-dlp")
-            }
-        }
-        
-        // 尝试通过 PATH 查找
-        let process = Process()
-        let outputPipe = Pipe()
-        
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["bash", "-lc", "which yt-dlp || command -v yt-dlp"]
-        process.standardOutput = outputPipe
-        
-        var environment = ProcessInfo.processInfo.environment
-        let originalPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + originalPath
-        process.environment = environment
-        
         do {
-            try process.run()
-            process.waitUntilExit()
-            
-            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-               !output.isEmpty,
-               fileManager.isExecutableFile(atPath: output) {
-                appendLog("yt-dlp 已通过 PATH 找到: \(output)")
-                return output
-            } else if let output = String(data: data, encoding: .utf8), !output.isEmpty {
-                appendLog("which yt-dlp 输出: \(output)")
-            }
+            let path = try YtDlpLocator.shared.locate()
+            appendLog("yt-dlp 已找到: \(path)")
+            return path
         } catch {
-            appendLog("通过 PATH 检查 yt-dlp 时出错: \(error.localizedDescription)")
+            appendLog("yt-dlp 未找到")
+            throw error
         }
-        
-        throw NSError(
-            domain: "YouTubeSubscriptionsFetcher",
-            code: 2,
-            userInfo: [NSLocalizedDescriptionKey: "yt-dlp 未找到，请先安装: brew install yt-dlp"]
-        )
     }
     
     // MARK: - 获取订阅页面内容
@@ -1281,7 +1236,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
     }
     
     // MARK: - 解析视频信息
-    private func parseVideos(from jsonOutput: String, enrichDetails: Bool = true) throws -> [VideoItem] {
+    private func parseVideos(from jsonOutput: String, enrichDetails: Bool = true, ytDlpPath: String) throws -> [VideoItem] {
         var videos: [VideoItem] = []
         
         // 分割JSON输出，每行一个视频
@@ -1362,7 +1317,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         // 批量获取所有视频的详细信息（一次调用 yt-dlp）
         if enrichDetails {
-            let enrichedVideos = self.batchFetchVideoDetails(videos: videos, ytDlpPath: "/opt/homebrew/bin/yt-dlp")
+            let enrichedVideos = self.batchFetchVideoDetails(videos: videos, ytDlpPath: ytDlpPath)
             return enrichedVideos
         }
         

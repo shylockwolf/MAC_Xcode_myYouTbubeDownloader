@@ -381,23 +381,7 @@ struct ContentView: View {
         return nil
     }
     
-    // MARK: - 解析 yt-dlp 路径
-    private func resolveYtDlpPath() -> String {
-        let fileManager = FileManager.default
-        let candidatePaths = [
-            "/Library/Frameworks/Python.framework/Versions/3.13/bin/yt-dlp",
-            "/opt/homebrew/bin/yt-dlp",
-            "/usr/local/bin/yt-dlp"
-        ]
-        
-        for path in candidatePaths {
-            if fileManager.isExecutableFile(atPath: path) {
-                return path
-            }
-        }
-        
-        return "yt-dlp"
-    }
+    
     
     // MARK: - 处理 URL（解决微博短链接问题）
     private func processURL(_ url: String, logSlot: Int) -> String {
@@ -607,7 +591,17 @@ struct ContentView: View {
         // 获取下载目录
         let downloadsPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory() + "/Downloads"
         // yt-dlp 的可执行路径（兼容 Intel 与 Apple Silicon）
-        let ytDlpPath = resolveYtDlpPath()
+        let ytDlpPath: String
+        do {
+            ytDlpPath = try YtDlpLocator.shared.locate()
+            appendLog(slotIndex: slotIndex, message: "找到 yt-dlp: \(ytDlpPath)")
+        } catch {
+            appendLog(slotIndex: slotIndex, message: "❌ 错误：\(error.localizedDescription)")
+            downloadTasks[slotIndex] = nil
+            activeSlots[slotIndex] = nil
+            scheduleTasks()
+            return
+        }
         
         var command = "\"\(ytDlpPath)\" --extractor-args \"youtube:player_client=android\" --write-info-json"
         if convertToMp3 {
