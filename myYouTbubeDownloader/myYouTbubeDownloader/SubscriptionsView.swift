@@ -1143,7 +1143,6 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         process.arguments = [
             "--cookies-from-browser", "chrome",
-            "--flat-playlist",
             "--dump-json",
             "--skip-download",
             "--no-warnings",
@@ -1286,20 +1285,33 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                     // 获取频道名称（flat-playlist格式可能没有uploader字段）
                     let channel = videoJSON["uploader"] as? String ?? videoJSON["channel"] as? String ?? "未知频道"
                     
-                    // 获取时间戳（flat-playlist格式通常没有timestamp）
+                    // 获取时间戳（完整JSON格式有多种时间字段）
                     let timestamp = videoJSON["timestamp"] as? TimeInterval
+                    let uploadDate = videoJSON["upload_date"] as? String
                     let publishDate: Date
                     let publishTime: String
                     
-                    if let ts = timestamp {
+                    if let ts = timestamp, ts > 0 {
                         publishDate = Date(timeIntervalSince1970: ts)
+                        let formatter = DateFormatter()
+                        formatter.dateStyle = .medium
+                        formatter.timeStyle = .short
+                        publishTime = formatter.string(from: publishDate)
+                    } else if let uploadDateStr = uploadDate, uploadDateStr.count == 8 {
+                        let year = Int(uploadDateStr[..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 4)])!
+                        let month = Int(uploadDateStr[uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 4)..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 6)])!
+                        let day = Int(uploadDateStr[uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 6)..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 8)])!
+                        var components = DateComponents()
+                        components.year = year; components.month = month; components.day = day
+                        components.hour = 0; components.minute = 0; components.second = 0
+                        publishDate = Calendar.current.date(from: components) ?? Date(timeIntervalSince1970: 0)
                         let formatter = DateFormatter()
                         formatter.dateStyle = .medium
                         formatter.timeStyle = .short
                         publishTime = formatter.string(from: publishDate)
                     } else {
                         publishDate = Date(timeIntervalSince1970: 0)
-                        publishTime = "获取中..."
+                        publishTime = "未知时间"
                     }
                     
                     // 获取视频时长（秒）
@@ -1499,26 +1511,31 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
     private func applyVideoDetails(video: VideoItem, json: [String: Any]) -> VideoItem {
         let channel = json["uploader"] as? String ?? json["channel"] as? String ?? video.channel
         
-        // 时间解析（与原逻辑一致）
         var publishDate: Date
         let publishTime: String
+        var dateSource = "default"
         
         if let ts = json["timestamp"] as? TimeInterval {
             publishDate = Date(timeIntervalSince1970: ts)
+            dateSource = "timestamp"
         } else if let ts = json["release_timestamp"] as? TimeInterval {
             publishDate = Date(timeIntervalSince1970: ts)
+            dateSource = "release_timestamp"
         } else if let epoch = json["epoch"] as? TimeInterval {
             publishDate = epoch > 1000000000000
                 ? Date(timeIntervalSince1970: epoch / 1000)
                 : Date(timeIntervalSince1970: epoch)
+            dateSource = "epoch"
         } else if let published = json["published"] as? String {
             let isoFormatter = ISO8601DateFormatter()
             if let date = isoFormatter.date(from: published) {
                 publishDate = date
+                dateSource = "published(ISO8601)"
             } else {
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
                 publishDate = dateFormatter.date(from: published) ?? video.publishDate
+                dateSource = publishDate == video.publishDate ? "published(failed)" : "published(custom)"
             }
         } else if let uploadDateStr = json["upload_date"] as? String, uploadDateStr.count == 8 {
             let year = Int(uploadDateStr[..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 4)])!
@@ -1526,29 +1543,37 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
             let day = Int(uploadDateStr[uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 6)..<uploadDateStr.index(uploadDateStr.startIndex, offsetBy: 8)])!
             var components = DateComponents()
             components.year = year; components.month = month; components.day = day
-            components.hour = 12; components.minute = 0; components.second = 0
+            components.hour = 0; components.minute = 0; components.second = 0
             publishDate = Calendar.current.date(from: components) ?? video.publishDate
+            dateSource = publishDate == video.publishDate ? "upload_date(failed)" : "upload_date"
         } else if let releaseDateStr = json["release_date"] as? String, releaseDateStr.count == 8 {
             let year = Int(releaseDateStr[..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 4)])!
             let month = Int(releaseDateStr[releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 4)..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 6)])!
             let day = Int(releaseDateStr[releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 6)..<releaseDateStr.index(releaseDateStr.startIndex, offsetBy: 8)])!
             var components = DateComponents()
             components.year = year; components.month = month; components.day = day
-            components.hour = 12; components.minute = 0; components.second = 0
+            components.hour = 0; components.minute = 0; components.second = 0
             publishDate = Calendar.current.date(from: components) ?? video.publishDate
+            dateSource = publishDate == video.publishDate ? "release_date(failed)" : "release_date"
         } else {
             publishDate = video.publishDate
+            dateSource = "original_default"
         }
         
-        // 安全检查：未来日期修正
-        if publishDate > Date() {
-            publishDate = Date(timeIntervalSince1970: 0)
+        // 安全检查：未来日期修正（允许最多1天的误差）
+        if publishDate > Date().addingTimeInterval(86400) {
+            self.appendLog("⚠️ 视频「\(video.title.prefix(15))」日期异常(\(dateSource)): \(publishDate)，已修正")
+            publishDate = video.publishDate
         }
         
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         publishTime = formatter.string(from: publishDate)
+        
+        if video.publishDate.timeIntervalSince1970 == 0 && publishDate.timeIntervalSince1970 > 0 {
+            self.appendLog("📅 视频「\(video.title.prefix(15))」日期来源: \(dateSource) = \(publishTime)")
+        }
         
         // 时长
         let duration: String

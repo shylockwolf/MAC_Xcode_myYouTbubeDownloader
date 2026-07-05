@@ -280,7 +280,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.6.2")
+                Text("v2.6.3")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -692,6 +692,14 @@ struct ContentView: View {
                         } else {
                             self.appendLog(slotIndex: slotIndex, message: "⚠️ 无法获取发布日期，跳过重命名")
                             self.downloadRecords.append(finalName)
+                        }
+                        
+                        // 无论是否重命名，都清理 info.json 文件
+                        let baseName = finalName.components(separatedBy: ".").dropLast().joined(separator: ".")
+                        let infoJsonPath = downloadsDir.appendingPathComponent(baseName + ".info.json")
+                        if FileManager.default.fileExists(atPath: infoJsonPath.path) {
+                            try? FileManager.default.removeItem(at: infoJsonPath)
+                            self.appendLog(slotIndex: slotIndex, message: "🗑️ 已清理 info.json")
                         }
                     } else {
                         self.appendLog(slotIndex: slotIndex, message: "❌ 无法从日志中提取文件名")

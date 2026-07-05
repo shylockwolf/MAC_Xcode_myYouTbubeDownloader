@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.6.2-blue.svg)
+![Version](https://img.shields.io/badge/version-2.6.3-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features  
@@ -182,7 +182,19 @@ Key Components:
 
 ## 📝 Version History
 
-### v2.6.2 (Current)
+### v2.6.3 (Current)
+- **Publish Date Fix**:
+  - Removed `--flat-playlist` flag to fetch complete video JSON in a single call.
+  - Now directly parses `timestamp` and `upload_date` from the initial fetch, no longer depends on a secondary detail-fetching step.
+  - More reliable and accurate publish time extraction for subscription videos.
+- **Info.json Cleanup**:
+  - Added `--write-info-json` to download command for manual URL entries.
+  - After downloading and renaming, the `.info.json` file is automatically cleaned up in all cases (including MP3 conversions).
+- **Date Parsing Improvements**:
+  - Added detailed debug logging for date source tracking (timestamp, upload_date, published, etc.).
+  - Relaxed future-date correction to allow up to 1 day tolerance (fixes same-day videos being incorrectly marked as future).
+
+### v2.6.2
 - **yt-dlp Path Management**:
   - Added `YtDlpLocator` utility class for centralized yt-dlp path detection and caching.
   - Automatically saves detected yt-dlp path to UserDefaults for future use.
@@ -199,7 +211,7 @@ Key Components:
   - Fixed yt-dlp path hardcoding in subscription view.
   - Unified yt-dlp path detection across all components.
 
-### v2.6.2
+### v2.6.0
 - **One-Click Download**:
   - Added "一键下载" (One-Click Download) button in YouTube subscriptions page.
   - Automatically completes the entire workflow: fetch subscriptions → filter by time range → add all URLs → start download → convert to audio.
