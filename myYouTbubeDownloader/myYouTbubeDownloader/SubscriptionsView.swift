@@ -1284,8 +1284,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                         formatter.timeStyle = .short
                         publishTime = formatter.string(from: publishDate)
                     } else {
-                        // flat-playlist格式通常没有时间戳，先使用当前时间，稍后会获取详细信息
-                        publishDate = Date()
+                        publishDate = Date(timeIntervalSince1970: 0)
                         publishTime = "获取中..."
                     }
                     
@@ -1444,10 +1443,14 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         // 合并详情到视频列表
         var enrichedVideos: [VideoItem] = []
+        var enrichedCount = 0
+        var defaultDateCount = 0
         for video in videos {
+            var enriched = false
             if let json = detailMap[video.url.contains("watch") ? 
                 (video.url.components(separatedBy: "v=").last ?? video.url) : video.url] {
                 enrichedVideos.append(applyVideoDetails(video: video, json: json))
+                enriched = true
             } else {
                 // 尝试通过 URL 中的 ID 匹配
                 let matched = detailMap.values.first { detailJson in
@@ -1461,12 +1464,19 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                 }
                 if let matched = matched {
                     enrichedVideos.append(applyVideoDetails(video: video, json: matched))
+                    enriched = true
                 } else {
-                    // 无详情，使用原始信息
                     enrichedVideos.append(video)
                 }
             }
+            if enriched {
+                enrichedCount += 1
+            } else if enrichedVideos.last?.publishDate.timeIntervalSince1970 == 0 {
+                defaultDateCount += 1
+            }
         }
+        
+        self.appendLog("日期解析统计: 成功丰富 \(enrichedCount) 个, 默认日期 \(defaultDateCount) 个")
         
         return enrichedVideos
     }
@@ -1518,7 +1528,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         // 安全检查：未来日期修正
         if publishDate > Date() {
-            publishDate = Date()
+            publishDate = Date(timeIntervalSince1970: 0)
         }
         
         let formatter = DateFormatter()
