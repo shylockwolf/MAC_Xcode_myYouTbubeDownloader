@@ -1145,7 +1145,6 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
             "--cookies-from-browser", "chrome",
             "--dump-json",
             "--skip-download",
-            "--no-warnings",
             "--ignore-errors",
             "--playlist-items", "1:21",
             "https://www.youtube.com/feed/subscriptions"
@@ -1189,8 +1188,25 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
                 return
             }
             terminationStatus = process.terminationStatus
+            
+            // 读取管道中剩余的数据
+            let remainingOutput = outputHandle.availableData
+            if !remainingOutput.isEmpty, let str = String(data: remainingOutput, encoding: .utf8) {
+                output += str
+                if !self.cancellationToken {
+                    self.appendLog("[输出] \(str.prefix(200))\(str.count > 200 ? "..." : "")")
+                }
+            }
+            let remainingError = errorHandle.availableData
+            if !remainingError.isEmpty, let str = String(data: remainingError, encoding: .utf8) {
+                errorOutput += str
+                if !self.cancellationToken {
+                    self.appendLog("[错误] \(str)")
+                }
+            }
+            
             if !self.cancellationToken {
-                self.appendLog("命令执行完成，退出状态: \(process.terminationStatus)")
+                self.appendLog("命令执行完成，退出状态: \(process.terminationStatus)，输出长度: \(output.count)，错误长度: \(errorOutput.count)")
             }
             semaphore.signal()
         }
@@ -1241,7 +1257,8 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         }
         
         guard !output.isEmpty else {
-            throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 1, userInfo: [NSLocalizedDescriptionKey: "未能获取到订阅内容，请检查Chrome浏览器是否已登录YouTube且已关闭所有相关窗口"])
+            let detail = errorOutput.isEmpty ? "无错误输出" : errorOutput.prefix(500)
+            throw NSError(domain: "YouTubeSubscriptionsFetcher", code: 1, userInfo: [NSLocalizedDescriptionKey: "未能获取到订阅内容\n\n退出状态: \(terminationStatus)\n错误信息: \(detail)\n\n可能原因：\n1. Chrome浏览器正在运行（需先完全退出Chrome）\n2. Chrome未登录YouTube\n3. Cookie已失效"])
         }
         
         self.appendLog("成功获取订阅内容，开始解析...")
