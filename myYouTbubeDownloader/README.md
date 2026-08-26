@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.6.4-blue.svg)
+![Version](https://img.shields.io/badge/version-2.6.5-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features  
@@ -182,7 +182,20 @@ Key Components:
 
 ## 📝 Version History
 
-### v2.6.3 (Current)
+### v2.6.5 (Current)
+- **Version Bump**: All version references updated to 2.6.5.
+
+### v2.6.4
+- **Subscription Fetch Fix**:
+  - Switched subscription feed fetcher from default `web` client to `mweb` (mobile web) client.
+  - Fixes "The page needs to be reloaded" error that occurred when YouTube's web client rejected cookie-based requests.
+  - Added `--flat-playlist` flag so the subscription feed returns one JSON object per video (instead of attempting to fetch each video's formats).
+- **Batch Detail Fetch Fix**:
+  - Switched batch video detail fetcher from `player_client=web` to `player_client=mweb`.
+  - Restores `timestamp` / `upload_date` enrichment for subscription videos.
+  - Without this, all fetched videos were marked as "no timestamp" and filtered out by the time-range filter, leaving the video list empty (the "开始下载" button and "添加" button were unavailable).
+
+### v2.6.3
 - **Publish Date Fix**:
   - Removed `--flat-playlist` flag to fetch complete video JSON in a single call.
   - Now directly parses `timestamp` and `upload_date` from the initial fetch, no longer depends on a secondary detail-fetching step.
