@@ -1143,9 +1143,11 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         process.arguments = [
             "--cookies-from-browser", "chrome",
+            "--extractor-args", "youtube:player_client=mweb",
             "--dump-json",
             "--skip-download",
             "--ignore-errors",
+            "--flat-playlist",
             "--playlist-items", "1:21",
             "https://www.youtube.com/feed/subscriptions"
         ]
@@ -1391,7 +1393,7 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         
         // 构建参数：所有视频 URL 一次性传入
         var arguments = [
-            "--extractor-args", "youtube:player_client=web",
+            "--extractor-args", "youtube:player_client=mweb",
             "--dump-json",
             "--skip-download",
             "--no-warnings",

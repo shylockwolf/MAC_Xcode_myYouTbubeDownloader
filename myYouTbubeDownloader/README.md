@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.6.3-blue.svg)
+![Version](https://img.shields.io/badge/version-2.6.4-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features  
