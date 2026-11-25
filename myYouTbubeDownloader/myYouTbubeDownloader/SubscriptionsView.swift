@@ -1392,8 +1392,12 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         process.environment = environment
         
         // 构建参数：所有视频 URL 一次性传入
+        // --ignore-no-formats-error 必需：mweb client 的 n challenge 求解失败时
+        // 只剩 storyboard 格式，yt-dlp 会报 "Requested format is not available"
+        // 而不输出 JSON，导致 timestamp/upload_date 全部丢失
         var arguments = [
             "--extractor-args", "youtube:player_client=mweb",
+            "--ignore-no-formats-error",
             "--dump-json",
             "--skip-download",
             "--no-warnings",
@@ -1540,11 +1544,6 @@ class YouTubeSubscriptionsFetcher: ObservableObject {
         } else if let ts = json["release_timestamp"] as? TimeInterval {
             publishDate = Date(timeIntervalSince1970: ts)
             dateSource = "release_timestamp"
-        } else if let epoch = json["epoch"] as? TimeInterval {
-            publishDate = epoch > 1000000000000
-                ? Date(timeIntervalSince1970: epoch / 1000)
-                : Date(timeIntervalSince1970: epoch)
-            dateSource = "epoch"
         } else if let published = json["published"] as? String {
             let isoFormatter = ISO8601DateFormatter()
             if let date = isoFormatter.date(from: published) {

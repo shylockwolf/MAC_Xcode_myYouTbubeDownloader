@@ -280,7 +280,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Text("v2.6.5")
+                Text("v2.6.6")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }

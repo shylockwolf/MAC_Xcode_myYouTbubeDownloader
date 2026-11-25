@@ -2,7 +2,7 @@
 
 A powerful and user-friendly macOS application built with SwiftUI that serves as a GUI wrapper for `yt-dlp`. It allows users to download YouTube videos and convert them to MP3 by simply pasting the URL.
 
-![Version](https://img.shields.io/badge/version-2.6.5-blue.svg)
+![Version](https://img.shields.io/badge/version-2.6.6-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
 ## ✨ Features  
@@ -182,7 +182,19 @@ Key Components:
 
 ## 📝 Version History
 
-### v2.6.5 (Current)
+### v2.6.6 (Current)
+- **Subscription Timestamp Fix**:
+  - Added `--ignore-no-formats-error` to the batch video detail fetcher.
+  - YouTube's SABR-only streaming experiment broke the `mweb` client: its n challenge could not be solved (the local Deno runtime fails on YouTube's player script with `a.addOnDisposeCallback is not a function`), so all https format URLs were skipped and only storyboard thumbnails remained.
+  - yt-dlp then aborted with `Requested format is not available` and emitted **zero** JSON lines, which stripped `timestamp` / `upload_date` from every video and made the time-range filter discard the entire subscription list.
+  - With this flag yt-dlp still emits the metadata JSON when no downloadable format exists.
+- **Publish Date Fix**:
+  - Removed the `epoch` fallback from publish-date resolution.
+  - yt-dlp defines `epoch` as `int(time.time())` (the extraction moment), not the publish time — even for decade-old videos it equals "now".
+  - Keeping it made every timestamp-less video look like it was published just now, letting stale videos slip through the time-range filter.
+- **Version Bump**: All version references updated to 2.6.6.
+
+### v2.6.5
 - **Version Bump**: All version references updated to 2.6.5.
 
 ### v2.6.4
@@ -394,12 +406,18 @@ Key Components:
   - Check that cookies are accessible.
   - Verify yt-dlp is properly installed and accessible.
 
+- **Subscription Videos Show No Publish Time?**
+  - YouTube periodically enables the SABR-only streaming experiment, which can leave the `mweb` client with storyboard thumbnails only and no video/audio formats.
+  - The batch detail fetcher passes `--ignore-no-formats-error` so yt-dlp still returns the metadata JSON (`timestamp` / `upload_date`) even when no downloadable format exists.
+  - Update yt-dlp to the latest version and make sure a supported JavaScript runtime (Deno or Node) is available for n challenge solving.
+
 - **Weibo Videos Not Downloading?**
   - The app automatically handles Weibo short links (t.cn) and redirects.
   - If issues persist, check the download logs for specific error messages.
 
 - **JS Challenge Errors?**
-  - The app uses `--remote-components ejs:github` to automatically download challenge solver scripts.
+  - yt-dlp needs a supported JavaScript runtime (Deno or Node) to solve YouTube's n challenge.
+  - If the log shows `n challenge solving failed`, install or update Deno: `brew install deno`.
   - Ensure you have an active internet connection when downloading.
 
 - **App Won't Start?**
